@@ -17,31 +17,61 @@ let tokenExpiry = 0;
 
 async function getSpotifyToken() {
   if (spotifyToken && Date.now() < tokenExpiry) return spotifyToken;
-  const creds = Buffer.from(
-    `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
-  ).toString('base64');
+  const clientId = process.env.SPOTIFY_CLIENT_ID;
+  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    console.error('Missing Spotify credentials:', { clientId: !!clientId, clientSecret: !!clientSecret });
+    return null;
+  }
+  const creds = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
   const res = await fetch('https://accounts.spotify.com/api/token', {
     method: 'POST',
     headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: 'grant_type=client_credentials'
   });
   const data = await res.json();
+  console.log('Spotify token response:', data);
+  if (!data.access_token) {
+    console.error('Failed to get Spotify token:', data);
+    return null;
+  }
   spotifyToken = data.access_token;
   tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
   return spotifyToken;
 }
+
+app.get('/api/debug', (req, res) => {
+  res.json({
+    hasSpotifyId: !!process.env.SPOTIFY_CLIENT_ID,
+    hasSpotifySecret: !!process.env.SPOTIFY_CLIENT_SECRET,
+    hasStripe: !!process.env.STRIPE_SECRET_KEY,
+    hasBaseUrl: !!process.env.BASE_URL,
+    baseUrl: process.env.BASE_URL
+  });
+});
 
 app.get('/api/search', async (req, res) => {
   try {
     const { q } = req.query;
     if (!q) return res.json({ tracks: [] });
     const token = await getSpotifyToken();
+    if (!token) {
+      return res.json({ 
+        tracks: [], 
+        error: 'Could not get Spotify token',
+        hasClientId: !!process.env.SPOTIFY_CLIENT_ID,
+        hasClientSecret: !!process.env.SPOTIFY_CLIENT_SECRET
+      });
+    }
     const r = await fetch(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=8&market=NL`,
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=8&market=DE`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     const data = await r.json();
-    const tracks = (data.tracks?.items || []).map(t => ({
+    if (!data.tracks) {
+      return res.json({ tracks: [], error: 'Spotify API error', details: data });
+    }
+    const tracks = data.tracks.items.map(t => ({
       id: t.id,
       name: t.name,
       artist: t.artists.map(a => a.name).join(', '),
@@ -53,6 +83,7 @@ app.get('/api/search', async (req, res) => {
     }));
     res.json({ tracks });
   } catch (e) {
+    console.error('Search error:', e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -80,6 +111,7 @@ app.post('/api/create-payment', async (req, res) => {
     });
     res.json({ url: session.url });
   } catch (e) {
+    console.error('Payment error:', e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -104,6 +136,7 @@ app.post('/api/queue/add', async (req, res) => {
     queue.push(song);
     res.json({ success: true, position: queue.length, song });
   } catch (e) {
+    console.error('Queue add error:', e);
     res.status(500).json({ error: e.message });
   }
 });
