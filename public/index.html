@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Komos — Your Night, Your Music</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --black: #0a0a0a;
+    --dark: #111111;
+    --card: #1a1a1a;
+    --border: #2a2a2a;
+    --gold: #c9a84c;
+    --gold-light: #e8c97a;
+    --white: #f0ece4;
+    --muted: #666;
+    --green: #1db954;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { background: var(--black); color: var(--white); font-family: 'DM Sans', sans-serif; min-height: 100vh; overflow-x: hidden; }
+  .header { position: sticky; top: 0; z-index: 100; background: var(--black); border-bottom: 1px solid var(--border); padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; }
+  .logo { font-family: 'Bebas Neue', sans-serif; font-size: 32px; letter-spacing: 3px; color: var(--gold); line-height: 1; }
+  .logo span { color: var(--white); font-size: 11px; display: block; letter-spacing: 4px; font-family: 'DM Sans', sans-serif; font-weight: 300; margin-top: -2px; }
+  .queue-pill { background: var(--gold); color: var(--black); font-size: 11px; font-weight: 500; padding: 5px 12px; border-radius: 20px; cursor: pointer; letter-spacing: 0.5px; }
+  .hero { padding: 32px 20px 24px; border-bottom: 1px solid var(--border); }
+  .hero h1 { font-family: 'Bebas Neue', sans-serif; font-size: clamp(42px, 12vw, 64px); line-height: 0.95; letter-spacing: 1px; color: var(--white); margin-bottom: 10px; }
+  .hero h1 em { font-style: normal; color: var(--gold); display: block; }
+  .hero p { font-size: 14px; color: var(--muted); font-weight: 300; letter-spacing: 0.3px; }
+  .price-tag { display: inline-block; margin-top: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 8px 14px; font-size: 13px; color: var(--gold-light); }
+  .price-tag strong { font-size: 18px; font-weight: 500; }
+  .search-section { padding: 20px; }
+  .search-wrap { position: relative; }
+  .search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; font-size: 16px; }
+  input[type="text"] { width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 10px; color: var(--white); font-family: 'DM Sans', sans-serif; font-size: 15px; padding: 14px 14px 14px 42px; outline: none; transition: border-color 0.2s; }
+  input[type="text"]:focus { border-color: var(--gold); }
+  input[type="text"]::placeholder { color: var(--muted); font-weight: 300; }
+  .results { padding: 0 20px 100px; }
+  .section-label { font-size: 10px; letter-spacing: 3px; color: var(--muted); text-transform: uppercase; margin-bottom: 12px; margin-top: 4px; }
+  .track-card { display: flex; align-items: center; gap: 14px; padding: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; cursor: pointer; transition: border-color 0.15s, transform 0.1s; }
+  .track-card:active { transform: scale(0.98); }
+  .track-card:hover { border-color: var(--gold); }
+  .track-img { width: 52px; height: 52px; border-radius: 6px; object-fit: cover; flex-shrink: 0; background: var(--border); }
+  .track-info { flex: 1; min-width: 0; }
+  .track-name { font-size: 14px; font-weight: 500; color: var(--white); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track-artist { font-size: 12px; color: var(--muted); font-weight: 300; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track-price { font-size: 13px; font-weight: 500; color: var(--gold); flex-shrink: 0; background: rgba(201, 168, 76, 0.1); padding: 6px 10px; border-radius: 6px; }
+  .queue-panel { position: fixed; bottom: 0; left: 0; right: 0; background: var(--dark); border-top: 1px solid var(--border); border-radius: 20px 20px 0 0; padding: 0 20px 30px; transform: translateY(100%); transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1); z-index: 200; max-height: 70vh; overflow-y: auto; }
+  .queue-panel.open { transform: translateY(0); }
+  .queue-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 12px auto 20px; }
+  .queue-panel h2 { font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 2px; color: var(--gold); margin-bottom: 16px; }
+  .queue-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .queue-num { font-family: 'Bebas Neue', sans-serif; font-size: 20px; color: var(--muted); width: 24px; text-align: center; flex-shrink: 0; }
+  .queue-img { width: 40px; height: 40px; border-radius: 4px; object-fit: cover; background: var(--border); flex-shrink: 0; }
+  .queue-info { flex: 1; min-width: 0; }
+  .queue-info .name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .queue-info .artist { font-size: 11px; color: var(--muted); }
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 199; display: none; backdrop-filter: blur(2px); }
+  .overlay.show { display: block; }
+  .loading { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 13px; font-weight: 300; letter-spacing: 0.5px; }
+  .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--gold); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty { text-align: center; padding: 48px 20px; color: var(--muted); }
+  .empty .icon { font-size: 36px; margin-bottom: 12px; opacity: 0.4; }
+  .empty p { font-size: 13px; font-weight: 300; line-height: 1.6; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--gold); color: var(--black); padding: 12px 24px; border-radius: 10px; font-size: 13px; font-weight: 500; z-index: 300; transition: transform 0.3s; white-space: nowrap; }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .modal { position: fixed; inset: 0; z-index: 300; display: flex; align-items: flex-end; display: none; }
+  .modal.show { display: flex; }
+  .modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(4px); }
+  .modal-sheet { position: relative; width: 100%; background: var(--dark); border-radius: 20px 20px 0 0; border-top: 1px solid var(--border); padding: 24px 24px 40px; z-index: 1; }
+  .modal-img { width: 72px; height: 72px; border-radius: 8px; object-fit: cover; margin-bottom: 16px; }
+  .modal-title { font-family: 'Bebas Neue', sans-serif; font-size: 26px; letter-spacing: 1px; margin-bottom: 2px; }
+  .modal-artist { font-size: 13px; color: var(--muted); margin-bottom: 24px; font-weight: 300; }
+  .btn-pay { width: 100%; background: var(--gold); color: var(--black); border: none; border-radius: 10px; font-family: 'Bebas Neue', sans-serif; font-size: 20px; letter-spacing: 2px; padding: 16px; cursor: pointer; transition: opacity 0.15s; }
+  .btn-pay:active { opacity: 0.85; }
+  .btn-cancel { width: 100%; background: transparent; color: var(--muted); border: none; font-family: 'DM Sans', sans-serif; font-size: 14px; padding: 14px; cursor: pointer; margin-top: 6px; }
+  .queue-count-badge { background: #e74c3c; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; display: inline-flex; align-items: center; justify-content: center; margin-left: 4px; font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="logo">Komos<span>Stuttgart</span></div>
+  <div class="queue-pill" onclick="openQueue()">Queue <span id="queueBadge" class="queue-count-badge" style="display:none">0</span></div>
+</div>
+<div class="hero">
+  <h1>Your night.<br><em>Your music.</em></h1>
+  <p>Search any song. Pay to play. Hear it in the bar.</p>
+  <div class="price-tag">One song — <strong>€1.00</strong></div>
+</div>
+<div class="search-section">
+  <div class="search-wrap">
+    <span class="search-icon">♫</span>
+    <input type="text" id="searchInput" placeholder="Search artist or song..." autocomplete="off" autocorrect="off" spellcheck="false">
+  </div>
+</div>
+<div class="results" id="results">
+  <div class="empty">
+    <div class="icon">🎵</div>
+    <p>Search for any song and<br>add it to the bar's queue</p>
+  </div>
+</div>
+<div class="overlay" id="overlay" onclick="closeQueue()"></div>
+<div class="queue-panel" id="queuePanel">
+  <div class="queue-handle"></div>
+  <h2>Up Next</h2>
+  <div id="queueList"></div>
+</div>
+<div class="modal" id="modal">
+  <div class="modal-backdrop" onclick="closeModal()"></div>
+  <div class="modal-sheet">
+    <img class="modal-img" id="modalImg" src="" alt="">
+    <div class="modal-title" id="modalTitle"></div>
+    <div class="modal-artist" id="modalArtist"></div>
+    <button class="btn-pay" onclick="confirmPay()">PAY €1.00 — PLAY THIS SONG</button>
+    <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+let searchTimeout;
+let selectedTrack = null;
+const PRICE = 100;
+
+document.getElementById('searchInput').addEventListener('input', function() {
+  clearTimeout(searchTimeout);
+  const q = this.value.trim();
+  if (!q) { showEmpty(); return; }
+  searchTimeout = setTimeout(() => search(q), 400);
+});
+
+async function search(q) {
+  showLoading();
+  try {
+    const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    const data = await r.json();
+    renderTracks(data.tracks || []);
+  } catch(e) { showError(); }
+}
+
+function renderTracks(tracks) {
+  const el = document.getElementById('results');
+  if (!tracks.length) { el.innerHTML = `<div class="empty"><div class="icon">🔍</div><p>No results found.<br>Try a different search.</p></div>`; return; }
+  el.innerHTML = `<p class="section-label">Results</p>` + tracks.map(t => `
+    <div class="track-card" onclick='selectTrack(${JSON.stringify(t).replace(/'/g, "&#39;")})'>
+      <img class="track-img" src="${t.image || ''}" onerror="this.style.background='#2a2a2a'" alt="">
+      <div class="track-info">
+        <div class="track-name">${t.name}</div>
+        <div class="track-artist">${t.artist}</div>
+      </div>
+      <div class="track-price">€1</div>
+    </div>
+  `).join('');
+}
+
+function selectTrack(track) {
+  selectedTrack = track;
+  document.getElementById('modalImg').src = track.image || '';
+  document.getElementById('modalTitle').textContent = track.name;
+  document.getElementById('modalArtist').textContent = track.artist;
+  document.getElementById('modal').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('show');
+  selectedTrack = null;
+}
+
+async function confirmPay() {
+  if (!selectedTrack) return;
+  document.querySelector('.btn-pay').textContent = 'Redirecting...';
+  try {
+    const r = await fetch('/api/create-payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trackId: selectedTrack.id, trackName: selectedTrack.name, artist: selectedTrack.artist, image: selectedTrack.image, uri: selectedTrack.uri, price: PRICE })
+    });
+    const data = await r.json();
+    if (data.url) window.location.href = data.url;
+  } catch(e) {
+    showToast('Payment failed. Try again.');
+    document.querySelector('.btn-pay').textContent = 'PAY €1.00 — PLAY THIS SONG';
+  }
+}
+
+async function openQueue() {
+  await loadQueue();
+  document.getElementById('queuePanel').classList.add('open');
+  document.getElementById('overlay').classList.add('show');
+}
+
+function closeQueue() {
+  document.getElementById('queuePanel').classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+}
+
+async function loadQueue() {
+  try {
+    const r = await fetch('/api/queue');
+    const data = await r.json();
+    renderQueue(data.queue || []);
+    updateBadge((data.queue || []).length);
+  } catch(e) {}
+}
+
+function renderQueue(queue) {
+  const el = document.getElementById('queueList');
+  if (!queue.length) { el.innerHTML = `<div style="text-align:center;padding:32px 0;color:#666;font-size:13px;font-weight:300">Queue is empty.<br>Be the first to request a song.</div>`; return; }
+  el.innerHTML = queue.map((s, i) => `
+    <div class="queue-item">
+      <div class="queue-num">${i + 1}</div>
+      <img class="queue-img" src="${s.image || ''}" onerror="this.style.background='#2a2a2a'" alt="">
+      <div class="queue-info">
+        <div class="name">${s.name}</div>
+        <div class="artist">${s.artist}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function updateBadge(count) {
+  const badge = document.getElementById('queueBadge');
+  if (count > 0) { badge.textContent = count; badge.style.display = 'inline-flex'; }
+  else { badge.style.display = 'none'; }
+}
+
+function showLoading() { document.getElementById('results').innerHTML = `<div class="loading"><div class="spinner"></div>Searching...</div>`; }
+function showEmpty() { document.getElementById('results').innerHTML = `<div class="empty"><div class="icon">🎵</div><p>Search for any song and<br>add it to the bar's queue</p></div>`; }
+function showError() { document.getElementById('results').innerHTML = `<div class="empty"><div class="icon">⚠️</div><p>Something went wrong.<br>Check your connection.</p></div>`; }
+function showToast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
+
+setInterval(loadQueue, 10000);
+loadQueue();
+</script>
+</body>
+</html>
