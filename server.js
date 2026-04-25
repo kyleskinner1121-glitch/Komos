@@ -3,19 +3,57 @@ const express = require('express');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const cors = require('cors');
 const path = require('path');
+const { Pool } = require('pg');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-let queue = [];
-let playedSongs = [];
+// ── DATABASE ──
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+// Create tables if they don't exist
+async function initDB() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS venue_tokens (
+        venue_id VARCHAR(255) PRIMARY KEY,
+        access_token TEXT NOT NULL,
+        refresh_token TEXT,
+        expires_at BIGINT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS songs (
+        id BIGINT PRIMARY KEY,
+        track_id VARCHAR(255),
+        name TEXT,
+        artist TEXT,
+        image TEXT,
+        uri TEXT,
+        venue_id VARCHAR(255),
+        added_at TIMESTAMP DEFAULT NOW(),
+        status VARCHAR(50) DEFAULT 'queued',
+        played_at TIMESTAMP,
+        added_to_spotify BOOLEAN DEFAULT FALSE
+      )
+    `);
+    console.log('Database initialized');
+  } catch (e) {
+    console.error('DB init error:', e);
+  }
+}
+
+initDB();
+
 let spotifyToken = null;
 let tokenExpiry = 0;
-
-// Venue Spotify access tokens (venueId -> token data)
-let venueTokens = {};
 
 // ── SPOTIFY CLIENT CREDENTIALS (for search) ──
 async function getSpotifyToken() {
@@ -36,7 +74,51 @@ async function getSpotifyToken() {
   return spotifyToken;
 }
 
-// ── SPOTIFY OAUTH (for venue playback control) ──
+// ── SAVE VENUE TOKEN TO DB ──
+async function saveVenueToken(venueId, accessToken, refreshToken, expiresIn) {
+  const expiresAt = Date.now() + (expiresIn - 60) * 1000;
+  await pool.query(`
+    INSERT INTO venue_tokens (venue_id, access_token, refresh_token, expires_at, updated_at)
+    VALUES ($1, $2, $3, $4, NOW())
+    ON CONFLICT (venue_id) DO UPDATE SET
+      access_token = $2,
+      refresh_token = $3,
+      expires_at = $4,
+      updated_at = NOW()
+  `, [venueId, accessToken, refreshToken, expiresAt]);
+}
+
+// ── GET VENUE TOKEN FROM DB ──
+async function getVenueToken(venueId) {
+  try {
+    const result = await pool.query('SELECT * FROM venue_tokens WHERE venue_id = $1', [venueId]);
+    if (!result.rows.length) return null;
+    const tokenData = result.rows[0];
+    if (Date.now() < parseInt(tokenData.expires_at)) {
+      return tokenData.access_token;
+    }
+    // Refresh the token
+    if (!tokenData.refresh_token) return null;
+    const creds = Buffer.from(`${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`).toString('base64');
+    const r = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: tokenData.refresh_token
+      })
+    });
+    const data = await r.json();
+    if (!data.access_token) return null;
+    await saveVenueToken(venueId, data.access_token, tokenData.refresh_token, data.expires_in);
+    return data.access_token;
+  } catch (e) {
+    console.error('Get venue token error:', e);
+    return null;
+  }
+}
+
+// ── SPOTIFY OAUTH ──
 app.get('/auth/spotify', (req, res) => {
   const venueId = req.query.venueId || 'default';
   const scopes = 'user-modify-playback-state user-read-playback-state';
@@ -66,44 +148,13 @@ app.get('/auth/spotify/callback', async (req, res) => {
     });
     const data = await r.json();
     if (!data.access_token) return res.redirect('/setup?error=no_token');
-    venueTokens[venueId] = {
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token,
-      expiresAt: Date.now() + (data.expires_in - 60) * 1000
-    };
+    await saveVenueToken(venueId, data.access_token, data.refresh_token, data.expires_in);
     res.redirect(`/setup?success=true&venueId=${venueId}`);
   } catch (e) {
+    console.error('Auth callback error:', e);
     res.redirect('/setup?error=auth_failed');
   }
 });
-
-// ── REFRESH VENUE TOKEN ──
-async function getVenueToken(venueId) {
-  const tokenData = venueTokens[venueId];
-  if (!tokenData) return null;
-  if (Date.now() < tokenData.expiresAt) return tokenData.accessToken;
-  try {
-    const creds = Buffer.from(`${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`).toString('base64');
-    const r = await fetch('https://accounts.spotify.com/api/token', {
-      method: 'POST',
-      headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'refresh_token',
-        refresh_token: tokenData.refreshToken
-      })
-    });
-    const data = await r.json();
-    if (!data.access_token) return null;
-    venueTokens[venueId] = {
-      ...tokenData,
-      accessToken: data.access_token,
-      expiresAt: Date.now() + (data.expires_in - 60) * 1000
-    };
-    return data.access_token;
-  } catch (e) {
-    return null;
-  }
-}
 
 // ── ADD SONG TO SPOTIFY QUEUE ──
 async function addToSpotifyQueue(venueId, uri) {
@@ -125,7 +176,7 @@ async function addToSpotifyQueue(venueId, uri) {
   }
 }
 
-// ── CHECK VENUE SPOTIFY STATUS ──
+// ── VENUE STATUS ──
 app.get('/api/venue/status', async (req, res) => {
   const venueId = req.query.venueId || 'default';
   const token = await getVenueToken(venueId);
@@ -145,15 +196,21 @@ app.get('/api/venue/status', async (req, res) => {
 });
 
 // ── DEBUG ──
-app.get('/api/debug', (req, res) => {
-  res.json({
-    hasSpotifyId: !!process.env.SPOTIFY_CLIENT_ID,
-    hasSpotifySecret: !!process.env.SPOTIFY_CLIENT_SECRET,
-    hasStripe: !!process.env.STRIPE_SECRET_KEY,
-    hasBaseUrl: !!process.env.BASE_URL,
-    baseUrl: process.env.BASE_URL,
-    connectedVenues: Object.keys(venueTokens)
-  });
+app.get('/api/debug', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT venue_id FROM venue_tokens');
+    res.json({
+      hasSpotifyId: !!process.env.SPOTIFY_CLIENT_ID,
+      hasSpotifySecret: !!process.env.SPOTIFY_CLIENT_SECRET,
+      hasStripe: !!process.env.STRIPE_SECRET_KEY,
+      hasBaseUrl: !!process.env.BASE_URL,
+      hasDatabase: !!process.env.DATABASE_URL,
+      baseUrl: process.env.BASE_URL,
+      connectedVenues: result.rows.map(r => r.venue_id)
+    });
+  } catch (e) {
+    res.json({ error: e.message });
+  }
 });
 
 // ── SEARCH ──
@@ -222,48 +279,70 @@ app.post('/api/queue/add', async (req, res) => {
       return res.status(400).json({ error: 'Payment not confirmed' });
     }
     const addedToSpotify = await addToSpotifyQueue(venue_id, uri);
-    const song = {
-      id: Date.now(),
-      trackId: track_id,
-      name: track_name,
-      artist,
-      image,
-      uri,
-      venueId: venue_id,
-      addedAt: new Date().toISOString(),
-      status: 'queued',
-      addedToSpotify
-    };
-    queue.push(song);
-    res.json({ success: true, position: queue.filter(s => s.venueId === venue_id).length, song, addedToSpotify });
+    const id = Date.now();
+    await pool.query(`
+      INSERT INTO songs (id, track_id, name, artist, image, uri, venue_id, added_to_spotify)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `, [id, track_id, track_name, artist, image, uri, venue_id, addedToSpotify]);
+    const position = await pool.query(
+      "SELECT COUNT(*) FROM songs WHERE venue_id = $1 AND status = 'queued'",
+      [venue_id]
+    );
+    res.json({ success: true, position: parseInt(position.rows[0].count), addedToSpotify });
+  } catch (e) {
+    console.error('Queue add error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── GET QUEUE ──
+app.get('/api/queue', async (req, res) => {
+  const venueId = req.query.venueId || 'default';
+  try {
+    const queue = await pool.query(
+      "SELECT * FROM songs WHERE venue_id = $1 AND status = 'queued' ORDER BY added_at ASC",
+      [venueId]
+    );
+    const played = await pool.query(
+      "SELECT * FROM songs WHERE venue_id = $1 AND status = 'played' ORDER BY played_at DESC LIMIT 5",
+      [venueId]
+    );
+    res.json({
+      queue: queue.rows.map(s => ({
+        id: s.id, name: s.name, artist: s.artist, image: s.image, uri: s.uri, venueId: s.venue_id, addedAt: s.added_at
+      })),
+      played: played.rows.map(s => ({
+        id: s.id, name: s.name, artist: s.artist, image: s.image, uri: s.uri, venueId: s.venue_id, playedAt: s.played_at
+      }))
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// ── QUEUE ──
-app.get('/api/queue', (req, res) => {
-  const venueId = req.query.venueId || 'default';
-  const venueQueue = queue.filter(s => s.venueId === venueId);
-  const venuePlayed = playedSongs.filter(s => s.venueId === venueId).slice(-5);
-  res.json({ queue: venueQueue, played: venuePlayed });
+// ── MARK AS PLAYED ──
+app.post('/api/queue/played/:id', async (req, res) => {
+  const id = req.params.id;
+  try {
+    await pool.query(
+      "UPDATE songs SET status = 'played', played_at = NOW() WHERE id = $1",
+      [id]
+    );
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-app.post('/api/queue/played/:id', (req, res) => {
-  const id = parseInt(req.params.id);
-  const idx = queue.findIndex(s => s.id === id);
-  if (idx === -1) return res.status(404).json({ error: 'Not found' });
-  const [song] = queue.splice(idx, 1);
-  song.status = 'played';
-  song.playedAt = new Date().toISOString();
-  playedSongs.push(song);
-  res.json({ success: true });
-});
-
-app.post('/api/queue/skip/:id', (req, res) => {
-  const id = parseInt(req.params.id);
-  queue = queue.filter(s => s.id !== id);
-  res.json({ success: true });
+// ── SKIP ──
+app.post('/api/queue/skip/:id', async (req, res) => {
+  const id = req.params.id;
+  try {
+    await pool.query("DELETE FROM songs WHERE id = $1", [id]);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── PAGES ──
