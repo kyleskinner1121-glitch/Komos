@@ -66,7 +66,7 @@
   .empty p { font-size: 13px; font-weight: 300; line-height: 1.6; }
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--gold); color: var(--black); padding: 12px 24px; border-radius: 10px; font-size: 13px; font-weight: 500; z-index: 300; transition: transform 0.3s; white-space: nowrap; }
   .toast.show { transform: translateX(-50%) translateY(0); }
-  .modal { position: fixed; inset: 0; z-index: 300; display: flex; align-items: flex-end; display: none; }
+  .modal { position: fixed; inset: 0; z-index: 300; align-items: flex-end; display: none; }
   .modal.show { display: flex; }
   .modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(4px); }
   .modal-sheet { position: relative; width: 100%; background: var(--dark); border-radius: 20px 20px 0 0; border-top: 1px solid var(--border); padding: 24px 24px 40px; z-index: 1; }
@@ -81,7 +81,7 @@
 </head>
 <body>
 <div class="header">
-  <div class="logo">Komos<span>Stuttgart</span></div>
+  <div class="logo">Komos<span id="venueLabel"></span></div>
   <div class="queue-pill" onclick="openQueue()">Queue <span id="queueBadge" class="queue-count-badge" style="display:none">0</span></div>
 </div>
 <div class="hero">
@@ -122,6 +122,12 @@
 let searchTimeout;
 let selectedTrack = null;
 const PRICE = 100;
+const VENUE_ID = new URLSearchParams(window.location.search).get('venue') || 'default';
+
+// Set venue label in header
+if (VENUE_ID && VENUE_ID !== 'default') {
+  document.getElementById('venueLabel').textContent = VENUE_ID.replace(/-/g, ' ');
+}
 
 document.getElementById('searchInput').addEventListener('input', function() {
   clearTimeout(searchTimeout);
@@ -174,7 +180,15 @@ async function confirmPay() {
     const r = await fetch('/api/create-payment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ trackId: selectedTrack.id, trackName: selectedTrack.name, artist: selectedTrack.artist, image: selectedTrack.image, uri: selectedTrack.uri, price: PRICE })
+      body: JSON.stringify({
+        trackId: selectedTrack.id,
+        trackName: selectedTrack.name,
+        artist: selectedTrack.artist,
+        image: selectedTrack.image,
+        uri: selectedTrack.uri,
+        price: PRICE,
+        venueId: VENUE_ID
+      })
     });
     const data = await r.json();
     if (data.url) window.location.href = data.url;
@@ -197,7 +211,7 @@ function closeQueue() {
 
 async function loadQueue() {
   try {
-    const r = await fetch('/api/queue');
+    const r = await fetch(`/api/queue?venueId=${VENUE_ID}`);
     const data = await r.json();
     renderQueue(data.queue || []);
     updateBadge((data.queue || []).length);
