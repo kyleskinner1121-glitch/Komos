@@ -19,6 +19,7 @@
   .song-artist { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .position { background: rgba(201, 168, 76, 0.1); border: 1px solid rgba(201, 168, 76, 0.3); border-radius: 8px; padding: 12px 20px; font-size: 13px; color: var(--gold-light); margin-bottom: 32px; }
   .position strong { font-size: 24px; display: block; font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px; }
+  .spotify-status { background: rgba(29, 185, 84, 0.1); border: 1px solid rgba(29, 185, 84, 0.3); border-radius: 8px; padding: 10px 16px; font-size: 12px; color: #1db954; margin-bottom: 24px; display: none; }
   .btn-back { background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 14px; padding: 14px 32px; cursor: pointer; text-decoration: none; display: inline-block; }
 </style>
 </head>
@@ -26,6 +27,7 @@
 <div class="check">✓</div>
 <h1>You're in the queue!</h1>
 <p>Your song has been added.<br>Listen out for it coming up.</p>
+
 <div class="song-card" id="songCard" style="display:none">
   <img id="songImg" src="" alt="">
   <div>
@@ -33,11 +35,18 @@
     <div class="song-artist" id="songArtist"></div>
   </div>
 </div>
+
 <div class="position" id="positionBox" style="display:none">
   <strong id="positionNum"></strong>
   in the queue
 </div>
-<a href="/" class="btn-back">Request another song</a>
+
+<div class="spotify-status" id="spotifyStatus">
+  ♫ Added to Spotify queue automatically
+</div>
+
+<a href="#" class="btn-back" id="backBtn">Request another song</a>
+
 <script>
 async function init() {
   const params = new URLSearchParams(window.location.search);
@@ -47,6 +56,10 @@ async function init() {
   const image = params.get('image');
   const trackId = params.get('track_id');
   const uri = params.get('uri');
+  const venueId = params.get('venue_id') || 'default';
+
+  // Set back button URL with venue
+  document.getElementById('backBtn').href = venueId !== 'default' ? `/?venue=${venueId}` : '/';
 
   if (trackName) {
     document.getElementById('songName').textContent = trackName;
@@ -60,16 +73,30 @@ async function init() {
       const r = await fetch('/api/queue/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, track_id: trackId, track_name: trackName, artist, image, uri })
+        body: JSON.stringify({
+          session_id: sessionId,
+          track_id: trackId,
+          track_name: trackName,
+          artist,
+          image,
+          uri,
+          venue_id: venueId
+        })
       });
       const data = await r.json();
       if (data.position) {
         document.getElementById('positionNum').textContent = `#${data.position}`;
         document.getElementById('positionBox').style.display = 'block';
       }
-    } catch(e) {}
+      if (data.addedToSpotify) {
+        document.getElementById('spotifyStatus').style.display = 'block';
+      }
+    } catch(e) {
+      console.error(e);
+    }
   }
 }
+
 init();
 </script>
 </body>
