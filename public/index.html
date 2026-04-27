@@ -77,4 +77,414 @@
   .track-card { display: flex; align-items: center; gap: 14px; padding: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; cursor: pointer; transition: border-color 0.15s, transform 0.1s; }
   .track-card:active { transform: scale(0.98); }
   .track-card:hover { border-color: var(--orange); }
-  .track-im
+  .track-img { width: 52px; height: 52px; border-radius: 6px; object-fit: cover; flex-shrink: 0; background: var(--border); }
+  .track-info { flex: 1; min-width: 0; }
+  .track-name { font-size: 14px; font-weight: 500; color: var(--white); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track-artist { font-size: 12px; color: var(--muted); font-weight: 300; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track-price { font-size: 13px; font-weight: 600; color: var(--white); flex-shrink: 0; background: var(--orange); padding: 6px 10px; border-radius: 6px; }
+
+  /* ── QUEUE PANEL ── */
+  .queue-panel { position: fixed; bottom: 0; left: 0; right: 0; background: var(--dark); border-top: 2px solid var(--orange); border-radius: 20px 20px 0 0; padding: 0 20px 30px; transform: translateY(100%); transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1); z-index: 200; max-height: 70vh; overflow-y: auto; }
+  .queue-panel.open { transform: translateY(0); }
+  .queue-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 12px auto 20px; }
+  .queue-panel h2 { font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 2px; color: var(--orange); margin-bottom: 16px; }
+  .queue-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .queue-num { font-family: 'Bebas Neue', sans-serif; font-size: 20px; color: var(--orange); width: 24px; text-align: center; flex-shrink: 0; }
+  .queue-img { width: 40px; height: 40px; border-radius: 4px; object-fit: cover; background: var(--border); flex-shrink: 0; }
+  .queue-info { flex: 1; min-width: 0; }
+  .queue-info .name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .queue-info .artist { font-size: 11px; color: var(--muted); }
+  .overlay { position: fixed; inset: 0; background: rgba(18,14,46,0.85); z-index: 199; display: none; backdrop-filter: blur(4px); }
+  .overlay.show { display: block; }
+
+  /* ── LOADING ── */
+  .loading { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 13px; font-weight: 300; }
+  .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--orange); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty { text-align: center; padding: 48px 20px; color: var(--muted); }
+  .empty .icon { font-size: 36px; margin-bottom: 12px; opacity: 0.5; }
+  .empty p { font-size: 13px; font-weight: 300; line-height: 1.6; }
+
+  /* ── TOAST ── */
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--orange); color: var(--white); padding: 12px 24px; border-radius: 10px; font-size: 13px; font-weight: 500; z-index: 300; transition: transform 0.3s; white-space: nowrap; }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* ── MODAL ── */
+  .modal { position: fixed; inset: 0; z-index: 300; align-items: flex-end; display: none; }
+  .modal.show { display: flex; }
+  .modal-backdrop { position: absolute; inset: 0; background: rgba(18,14,46,0.9); backdrop-filter: blur(6px); }
+  .modal-sheet { position: relative; width: 100%; background: var(--dark); border-radius: 24px 24px 0 0; border-top: 2px solid var(--orange); padding: 28px 24px 44px; z-index: 1; }
+  .modal-img { width: 80px; height: 80px; border-radius: 10px; object-fit: cover; margin-bottom: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+  .modal-title { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 1px; margin-bottom: 2px; color: var(--white); }
+  .modal-artist { font-size: 13px; color: var(--muted); margin-bottom: 20px; font-weight: 300; }
+  .modal-credits-info { font-size: 12px; color: var(--muted); text-align: center; margin-bottom: 12px; display: none; }
+  .btn-use-credit { width: 100%; background: rgba(255,85,0,0.15); color: var(--orange-light); border: 1px solid rgba(255,85,0,0.4); border-radius: 12px; font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 2px; padding: 14px; cursor: pointer; margin-bottom: 8px; display: none; }
+  .btn-pay { width: 100%; background: var(--orange); color: var(--white); border: none; border-radius: 12px; font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 2px; padding: 18px; cursor: pointer; transition: opacity 0.15s; margin-bottom: 8px; }
+  .btn-pay:active { opacity: 0.85; }
+  .btn-bundle-upsell { width: 100%; background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 12px; font-family: 'DM Sans', sans-serif; font-size: 13px; padding: 12px; cursor: pointer; margin-bottom: 8px; transition: border-color 0.15s, color 0.15s; }
+  .btn-bundle-upsell:hover { border-color: var(--orange); color: var(--orange-light); }
+  .btn-cancel { width: 100%; background: transparent; color: var(--muted); border: none; font-family: 'DM Sans', sans-serif; font-size: 14px; padding: 12px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<!-- BUNDLE SCREEN -->
+<div class="bundle-screen" id="bundleScreen">
+  <div class="bundle-header">
+    <button class="back-btn" onclick="closeBundleScreen()">←</button>
+    <div class="bundle-title">Buy a Bundle</div>
+  </div>
+  <div class="bundle-subtitle">Create an account to save and use credits at any Komos venue</div>
+
+  <!-- Login prompt if not logged in -->
+  <div class="login-prompt" id="loginPrompt" style="display:none">
+    <p>Create a free account to buy bundles and save on songs.</p>
+    <button class="btn-login" onclick="goToLogin()">Sign In / Create Account</button>
+    <button class="btn-guest-link" onclick="closeBundleScreen()">Go back to jukebox</button>
+  </div>
+
+  <!-- Bundles if logged in -->
+  <div id="bundleOptions">
+    <div class="bundle-card" onclick="buyBundle('single')">
+      <div class="bundle-songs">1 Song</div>
+      <div class="bundle-desc">Single song credit</div>
+      <div class="bundle-price">€0.99</div>
+    </div>
+    <div class="bundle-card featured" onclick="buyBundle('five')">
+      <div class="featured-badge">Best Value</div>
+      <div class="bundle-songs">5 Songs</div>
+      <div class="bundle-desc">5 song credits</div>
+      <div class="bundle-price">€3.99</div>
+      <div class="bundle-saving">Save €1.00 vs single</div>
+    </div>
+    <div class="bundle-card" onclick="buyBundle('ten')">
+      <div class="bundle-songs">10 Songs</div>
+      <div class="bundle-desc">10 song credits</div>
+      <div class="bundle-price">€5.99</div>
+      <div class="bundle-saving">Save €3.91 vs single</div>
+    </div>
+    <div class="bundle-note">Credits are stored in your account and work at any Komos venue.</div>
+  </div>
+</div>
+
+<div class="header">
+  <div class="logo">Komos<span id="venueLabel">Your Night · Your Music</span></div>
+  <div class="header-right">
+    <div class="credits-badge" id="creditsBadge" onclick="showBundleScreen()">0 credits</div>
+    <button class="queue-pill" onclick="openQueue()">Queue <span id="queueBadge" class="queue-count-badge" style="display:none">0</span></button>
+  </div>
+</div>
+
+<div class="hero">
+  <h1>Your night.<br><em>Your music.</em></h1>
+  <p>Search any song · Pay · Hear it in the bar</p>
+  <div class="price-row">
+    <div class="price-tag">One song — <strong>€0.99</strong></div>
+    <button class="bundle-pill" onclick="showBundleScreen()">🎵 Buy bundle & save</button>
+  </div>
+</div>
+
+<div class="search-section">
+  <div class="search-wrap">
+    <span class="search-icon">♫</span>
+    <input type="text" id="searchInput" placeholder="Search artist or song..." autocomplete="off" autocorrect="off" spellcheck="false">
+  </div>
+</div>
+
+<div class="results" id="results">
+  <div class="empty">
+    <div class="icon">🎵</div>
+    <p>Search for any song and<br>add it to the bar's queue</p>
+  </div>
+</div>
+
+<div class="overlay" id="overlay" onclick="closeQueue()"></div>
+<div class="queue-panel" id="queuePanel">
+  <div class="queue-handle"></div>
+  <h2>Up Next</h2>
+  <div id="queueList"></div>
+</div>
+
+<div class="modal" id="modal">
+  <div class="modal-backdrop" onclick="closeModal()"></div>
+  <div class="modal-sheet">
+    <img class="modal-img" id="modalImg" src="" alt="">
+    <div class="modal-title" id="modalTitle"></div>
+    <div class="modal-artist" id="modalArtist"></div>
+    <div class="modal-credits-info" id="modalCreditsInfo"></div>
+    <button class="btn-use-credit" id="btnUseCredit" onclick="useCredit()">USE 1 CREDIT — PLAY THIS SONG</button>
+    <button class="btn-pay" id="btnPay" onclick="confirmPay()">PAY €0.99 — PLAY THIS SONG</button>
+    <button class="btn-bundle-upsell" id="btnBundleUpsell" onclick="openBundleFromModal()">🎵 Buy a bundle and save</button>
+    <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const PRICE = 99;
+const VENUE_ID = new URLSearchParams(window.location.search).get('venue') || 'default';
+let selectedTrack = null;
+let currentUser = null;
+
+if (VENUE_ID && VENUE_ID !== 'default') {
+  document.getElementById('venueLabel').textContent = VENUE_ID.replace(/-/g, ' ').toUpperCase();
+}
+
+// ── INIT ──
+async function init() {
+  try {
+    const r = await fetch('/api/auth/me');
+    const data = await r.json();
+    if (data.loggedIn) {
+      currentUser = data.user;
+      updateCreditsDisplay();
+    }
+  } catch(e) {}
+  loadQueue();
+}
+
+function updateCreditsDisplay() {
+  if (currentUser && currentUser.credits > 0) {
+    const badge = document.getElementById('creditsBadge');
+    badge.textContent = `${currentUser.credits} credit${currentUser.credits !== 1 ? 's' : ''}`;
+    badge.style.display = 'block';
+  } else {
+    document.getElementById('creditsBadge').style.display = 'none';
+  }
+}
+
+// ── BUNDLE SCREEN ──
+function showBundleScreen() {
+  const screen = document.getElementById('bundleScreen');
+  screen.classList.add('show');
+  if (!currentUser) {
+    document.getElementById('loginPrompt').style.display = 'block';
+    document.getElementById('bundleOptions').style.display = 'none';
+  } else {
+    document.getElementById('loginPrompt').style.display = 'none';
+    document.getElementById('bundleOptions').style.display = 'block';
+  }
+}
+
+function closeBundleScreen() {
+  document.getElementById('bundleScreen').classList.remove('show');
+}
+
+function goToLogin() {
+  window.location.href = `/login?venue=${VENUE_ID}&next=bundles`;
+}
+
+function openBundleFromModal() {
+  closeModal();
+  showBundleScreen();
+}
+
+async function buyBundle(type) {
+  if (!currentUser) { goToLogin(); return; }
+  try {
+    const r = await fetch('/api/create-bundle-payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bundleType: type, venueId: VENUE_ID })
+    });
+    const data = await r.json();
+    if (data.url) window.location.href = data.url;
+    else showToast(data.error || 'Something went wrong');
+  } catch(e) {
+    showToast('Payment failed. Try again.');
+  }
+}
+
+// ── SEARCH ──
+let searchTO;
+document.getElementById('searchInput').addEventListener('input', function() {
+  clearTimeout(searchTO);
+  const q = this.value.trim();
+  if (!q) { showEmpty(); return; }
+  searchTO = setTimeout(() => search(q), 400);
+});
+
+async function search(q) {
+  showLoading();
+  try {
+    const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    const data = await r.json();
+    renderTracks(data.tracks || []);
+  } catch(e) { showError(); }
+}
+
+function renderTracks(tracks) {
+  const el = document.getElementById('results');
+  if (!tracks.length) {
+    el.innerHTML = `<div class="empty"><div class="icon">🔍</div><p>No results found.<br>Try a different search.</p></div>`;
+    return;
+  }
+  const priceLabel = currentUser && currentUser.credits > 0 ? '1 credit' : '€0.99';
+  el.innerHTML = `<p class="section-label">Results</p>` + tracks.map(t => `
+    <div class="track-card" onclick='selectTrack(${JSON.stringify(t).replace(/'/g, "&#39;")})'>
+      <img class="track-img" src="${t.image || ''}" onerror="this.style.background='#3D3284'" alt="">
+      <div class="track-info">
+        <div class="track-name">${t.name}</div>
+        <div class="track-artist">${t.artist}</div>
+      </div>
+      <div class="track-price">${priceLabel}</div>
+    </div>
+  `).join('');
+}
+
+// ── SELECT TRACK ──
+function selectTrack(track) {
+  selectedTrack = track;
+  document.getElementById('modalImg').src = track.image || '';
+  document.getElementById('modalTitle').textContent = track.name;
+  document.getElementById('modalArtist').textContent = track.artist;
+
+  const creditsInfo = document.getElementById('modalCreditsInfo');
+  const btnCredit = document.getElementById('btnUseCredit');
+  const btnPay = document.getElementById('btnPay');
+  const btnBundle = document.getElementById('btnBundleUpsell');
+
+  if (currentUser && currentUser.credits > 0) {
+    creditsInfo.textContent = `You have ${currentUser.credits} credit${currentUser.credits !== 1 ? 's' : ''} remaining`;
+    creditsInfo.style.display = 'block';
+    btnCredit.style.display = 'block';
+    btnPay.textContent = 'PAY €0.99 INSTEAD';
+    btnBundle.style.display = 'none';
+  } else {
+    creditsInfo.style.display = 'none';
+    btnCredit.style.display = 'none';
+    btnPay.textContent = 'PAY €0.99 — PLAY THIS SONG';
+    btnBundle.style.display = 'block';
+  }
+
+  document.getElementById('modal').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('show');
+  selectedTrack = null;
+}
+
+// ── USE CREDIT ──
+async function useCredit() {
+  if (!selectedTrack || !currentUser) return;
+  const btn = document.getElementById('btnUseCredit');
+  btn.textContent = 'Adding...';
+  btn.style.pointerEvents = 'none';
+  try {
+    const r = await fetch('/api/queue/use-credit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        track_id: selectedTrack.id,
+        track_name: selectedTrack.name,
+        artist: selectedTrack.artist,
+        image: selectedTrack.image,
+        uri: selectedTrack.uri,
+        venue_id: VENUE_ID
+      })
+    });
+    const data = await r.json();
+    if (data.success) {
+      currentUser.credits = data.creditsRemaining;
+      updateCreditsDisplay();
+      closeModal();
+      showToast(`♫ Added — ${data.creditsRemaining} credit${data.creditsRemaining !== 1 ? 's' : ''} left`);
+      loadQueue();
+    } else {
+      showToast(data.error || 'Failed to use credit');
+      btn.textContent = 'USE 1 CREDIT — PLAY THIS SONG';
+      btn.style.pointerEvents = 'auto';
+    }
+  } catch(e) {
+    showToast('Something went wrong');
+    btn.textContent = 'USE 1 CREDIT — PLAY THIS SONG';
+    btn.style.pointerEvents = 'auto';
+  }
+}
+
+// ── PAY ──
+async function confirmPay() {
+  if (!selectedTrack) return;
+  const btn = document.getElementById('btnPay');
+  btn.textContent = 'Redirecting...';
+  btn.style.pointerEvents = 'none';
+  try {
+    const r = await fetch('/api/create-payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        trackId: selectedTrack.id,
+        trackName: selectedTrack.name,
+        artist: selectedTrack.artist,
+        image: selectedTrack.image,
+        uri: selectedTrack.uri,
+        price: PRICE,
+        venueId: VENUE_ID
+      })
+    });
+    const data = await r.json();
+    if (data.url) window.location.href = data.url;
+  } catch(e) {
+    showToast('Payment failed. Try again.');
+    btn.textContent = 'PAY €0.99 — PLAY THIS SONG';
+    btn.style.pointerEvents = 'auto';
+  }
+}
+
+// ── QUEUE ──
+async function openQueue() {
+  await loadQueue();
+  document.getElementById('queuePanel').classList.add('open');
+  document.getElementById('overlay').classList.add('show');
+}
+
+function closeQueue() {
+  document.getElementById('queuePanel').classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+}
+
+async function loadQueue() {
+  try {
+    const r = await fetch(`/api/queue?venueId=${VENUE_ID}`);
+    const data = await r.json();
+    renderQueue(data.queue || []);
+    updateBadge((data.queue || []).length);
+  } catch(e) {}
+}
+
+function renderQueue(queue) {
+  const el = document.getElementById('queueList');
+  if (!queue.length) {
+    el.innerHTML = `<div style="text-align:center;padding:32px 0;color:var(--muted);font-size:13px;font-weight:300">Queue is empty.<br>Be the first to request a song.</div>`;
+    return;
+  }
+  el.innerHTML = queue.map((s, i) => `
+    <div class="queue-item">
+      <div class="queue-num">${i + 1}</div>
+      <img class="queue-img" src="${s.image || ''}" onerror="this.style.background='#3D3284'" alt="">
+      <div class="queue-info">
+        <div class="name">${s.name}</div>
+        <div class="artist">${s.artist}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function updateBadge(count) {
+  const badge = document.getElementById('queueBadge');
+  if (count > 0) { badge.textContent = count; badge.style.display = 'inline-flex'; }
+  else { badge.style.display = 'none'; }
+}
+
+function showLoading() { document.getElementById('results').innerHTML = `<div class="loading"><div class="spinner"></div>Searching...</div>`; }
+function showEmpty() { document.getElementById('results').innerHTML = `<div class="empty"><div class="icon">🎵</div><p>Search for any song and<br>add it to the bar's queue</p></div>`; }
+function showError() { document.getElementById('results').innerHTML = `<div class="empty"><div class="icon">⚠️</div><p>Something went wrong.<br>Check your connection.</p></div>`; }
+function showToast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
+
+setInterval(loadQueue, 10000);
+init();
+</script>
+</body>
+</html>
