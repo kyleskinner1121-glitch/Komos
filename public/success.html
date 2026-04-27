@@ -6,24 +6,25 @@
 <title>Komos — Song Queued!</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
-  :root { --black: #0a0a0a; --card: #1a1a1a; --border: #2a2a2a; --gold: #c9a84c; --gold-light: #e8c97a; --white: #f0ece4; --muted: #666; }
+  :root { --black: #120E2E; --dark: #1A1245; --card: #231960; --border: #3D3284; --orange: #FF5500; --orange-light: #FF7733; --white: #FFFFFF; --muted: #9B93CC; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--black); color: var(--white); font-family: 'DM Sans', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center; }
-  .check { width: 72px; height: 72px; background: rgba(201, 168, 76, 0.15); border: 2px solid var(--gold); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; margin: 0 auto 24px; animation: pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .check { width: 80px; height: 80px; background: rgba(255,85,0,0.15); border: 2px solid var(--orange); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 32px; margin: 0 auto 24px; animation: pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
   @keyframes pop { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-  h1 { font-family: 'Bebas Neue', sans-serif; font-size: 42px; letter-spacing: 2px; color: var(--gold); margin-bottom: 8px; }
+  h1 { font-family: 'Bebas Neue', sans-serif; font-size: 48px; letter-spacing: 3px; color: var(--orange); margin-bottom: 8px; }
   p { color: var(--muted); font-size: 14px; font-weight: 300; line-height: 1.6; margin-bottom: 32px; }
-  .song-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: flex; align-items: center; gap: 14px; margin-bottom: 32px; width: 100%; max-width: 360px; text-align: left; }
-  .song-card img { width: 56px; height: 56px; border-radius: 6px; object-fit: cover; background: var(--border); flex-shrink: 0; }
-  .song-name { font-size: 15px; font-weight: 500; }
-  .song-artist { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .position { background: rgba(201, 168, 76, 0.1); border: 1px solid rgba(201, 168, 76, 0.3); border-radius: 8px; padding: 12px 20px; font-size: 13px; color: var(--gold-light); margin-bottom: 32px; }
-  .position strong { font-size: 24px; display: block; font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px; }
-  .spotify-status { background: rgba(29, 185, 84, 0.1); border: 1px solid rgba(29, 185, 84, 0.3); border-radius: 8px; padding: 10px 16px; font-size: 12px; color: #1db954; margin-bottom: 24px; display: none; }
-  .btn-back { background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 14px; padding: 14px 32px; cursor: pointer; text-decoration: none; display: inline-block; }
+  .song-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; display: flex; align-items: center; gap: 14px; margin-bottom: 24px; width: 100%; max-width: 380px; text-align: left; }
+  .song-card img { width: 60px; height: 60px; border-radius: 8px; object-fit: cover; background: var(--border); flex-shrink: 0; }
+  .song-name { font-size: 15px; font-weight: 500; color: var(--white); }
+  .song-artist { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .position { background: rgba(255,85,0,0.1); border: 1px solid rgba(255,85,0,0.3); border-radius: 10px; padding: 14px 24px; font-size: 13px; color: var(--orange-light); margin-bottom: 24px; }
+  .position strong { font-size: 28px; display: block; font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px; color: var(--orange); }
+  .spotify-status { background: rgba(29,185,84,0.1); border: 1px solid rgba(29,185,84,0.3); border-radius: 8px; padding: 10px 16px; font-size: 12px; color: #1db954; margin-bottom: 24px; display: none; letter-spacing: 0.3px; }
+  .btn-back { background: var(--orange); color: var(--white); border: none; border-radius: 12px; font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 2px; padding: 16px 32px; cursor: pointer; text-decoration: none; display: inline-block; }
 </style>
 </head>
 <body>
+
 <div class="check">✓</div>
 <h1>You're in the queue!</h1>
 <p>Your song has been added.<br>Listen out for it coming up.</p>
@@ -45,7 +46,7 @@
   ♫ Added to Spotify queue automatically
 </div>
 
-<a href="#" class="btn-back" id="backBtn">Request another song</a>
+<a href="#" class="btn-back" id="backBtn">Request Another Song</a>
 
 <script>
 async function init() {
@@ -58,7 +59,6 @@ async function init() {
   const uri = params.get('uri');
   const venueId = params.get('venue_id') || 'default';
 
-  // Set back button URL with venue
   document.getElementById('backBtn').href = venueId !== 'default' ? `/?venue=${venueId}` : '/';
 
   if (trackName) {
@@ -73,15 +73,7 @@ async function init() {
       const r = await fetch('/api/queue/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: sessionId,
-          track_id: trackId,
-          track_name: trackName,
-          artist,
-          image,
-          uri,
-          venue_id: venueId
-        })
+        body: JSON.stringify({ session_id: sessionId, track_id: trackId, track_name: trackName, artist, image, uri, venue_id: venueId })
       });
       const data = await r.json();
       if (data.position) {
@@ -91,12 +83,9 @@ async function init() {
       if (data.addedToSpotify) {
         document.getElementById('spotifyStatus').style.display = 'block';
       }
-    } catch(e) {
-      console.error(e);
-    }
+    } catch(e) { console.error(e); }
   }
 }
-
 init();
 </script>
 </body>
