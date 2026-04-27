@@ -6,44 +6,45 @@
 <title>Komos — Venue Setup</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
-  :root { --black: #0a0a0a; --card: #1a1a1a; --border: #2a2a2a; --gold: #c9a84c; --gold-light: #e8c97a; --white: #f0ece4; --muted: #666; --green: #27ae60; --red: #e74c3c; }
+  :root { --black: #120E2E; --dark: #1A1245; --card: #231960; --border: #3D3284; --orange: #FF5500; --orange-light: #FF7733; --white: #FFFFFF; --muted: #9B93CC; --green: #27ae60; --red: #e74c3c; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--black); color: var(--white); font-family: 'DM Sans', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
-  .logo { font-family: 'Bebas Neue', sans-serif; font-size: 48px; letter-spacing: 4px; color: var(--gold); margin-bottom: 8px; text-align: center; }
-  .subtitle { font-size: 12px; letter-spacing: 3px; color: var(--muted); text-transform: uppercase; margin-bottom: 48px; text-align: center; }
+  .logo { font-family: 'Bebas Neue', sans-serif; font-size: 52px; letter-spacing: 5px; color: var(--orange); margin-bottom: 4px; text-align: center; }
+  .subtitle { font-size: 11px; letter-spacing: 4px; color: var(--muted); text-transform: uppercase; margin-bottom: 40px; text-align: center; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 32px; width: 100%; max-width: 480px; }
-  .card-title { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 2px; color: var(--white); margin-bottom: 6px; }
+  .card-title { font-family: 'Bebas Neue', sans-serif; font-size: 26px; letter-spacing: 2px; color: var(--white); margin-bottom: 6px; }
   .card-desc { font-size: 13px; color: var(--muted); font-weight: 300; line-height: 1.6; margin-bottom: 24px; }
   .input-group { margin-bottom: 16px; }
   .input-label { font-size: 11px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; display: block; }
-  input[type="text"] { width: 100%; background: #111; border: 1px solid var(--border); border-radius: 8px; color: var(--white); font-family: 'DM Sans', sans-serif; font-size: 14px; padding: 12px 14px; outline: none; transition: border-color 0.2s; }
-  input[type="text"]:focus { border-color: var(--gold); }
-  .btn-spotify { width: 100%; background: #1db954; color: white; border: none; border-radius: 10px; font-family: 'Bebas Neue', sans-serif; font-size: 20px; letter-spacing: 2px; padding: 16px; cursor: pointer; transition: opacity 0.15s; display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px; }
+  input[type="text"] { width: 100%; background: var(--dark); border: 1px solid var(--border); border-radius: 8px; color: var(--white); font-family: 'DM Sans', sans-serif; font-size: 14px; padding: 12px 14px; outline: none; transition: border-color 0.2s; }
+  input[type="text"]:focus { border-color: var(--orange); }
+  input[type="text"]::placeholder { color: var(--muted); }
+  .input-hint { font-size: 11px; color: var(--muted); margin-top: 6px; font-weight: 300; }
+  .btn-spotify { width: 100%; background: #1db954; color: white; border: none; border-radius: 10px; font-family: 'Bebas Neue', sans-serif; font-size: 20px; letter-spacing: 2px; padding: 16px; cursor: pointer; transition: opacity 0.15s; margin-top: 8px; }
   .btn-spotify:hover { opacity: 0.9; }
-  .btn-spotify:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-spotify:disabled { opacity: 0.4; cursor: not-allowed; }
   .status-box { border-radius: 10px; padding: 16px; margin-top: 24px; display: none; }
-  .status-box.success { background: rgba(39, 174, 96, 0.15); border: 1px solid rgba(39, 174, 96, 0.4); }
-  .status-box.error { background: rgba(231, 76, 60, 0.15); border: 1px solid rgba(231, 76, 60, 0.4); }
+  .status-box.success { background: rgba(39,174,96,0.1); border: 1px solid rgba(39,174,96,0.3); }
+  .status-box.error { background: rgba(231,76,60,0.1); border: 1px solid rgba(231,76,60,0.3); }
   .status-box.show { display: block; }
   .status-title { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
   .status-desc { font-size: 12px; color: var(--muted); font-weight: 300; line-height: 1.5; }
-  .success .status-title { color: #27ae60; }
+  .success .status-title { color: var(--green); }
   .error .status-title { color: var(--red); }
   .venue-info { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); display: none; }
   .venue-info.show { display: block; }
-  .info-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .info-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; gap: 8px; }
   .info-row:last-child { border-bottom: none; }
-  .info-label { color: var(--muted); font-weight: 300; }
-  .info-value { color: var(--white); font-weight: 500; font-family: monospace; font-size: 12px; }
-  .copy-btn { background: var(--border); border: none; color: var(--muted); padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+  .info-label { color: var(--muted); font-weight: 300; flex-shrink: 0; }
+  .info-value { color: var(--white); font-weight: 500; font-family: monospace; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .copy-btn { background: var(--border); border: none; color: var(--muted); padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; font-family: 'DM Sans', sans-serif; flex-shrink: 0; transition: color 0.15s; }
   .copy-btn:hover { color: var(--white); }
-  .qr-section { margin-top: 24px; text-align: center; }
-  .qr-label { font-size: 11px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; margin-bottom: 12px; }
-  .device-status { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-top: 12px; }
+  .device-status { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-top: 14px; color: var(--muted); }
   .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
   .dot.green { background: var(--green); }
   .dot.red { background: var(--red); }
   .dot.grey { background: var(--muted); }
+  .divider { height: 1px; background: var(--border); margin: 24px 0; }
 </style>
 </head>
 <body>
@@ -53,12 +54,12 @@
 
 <div class="card">
   <div class="card-title">Connect Your Venue</div>
-  <div class="card-desc">Enter a unique ID for your venue, then connect your Spotify Premium account. Patrons will be able to queue songs directly to your speakers.</div>
+  <div class="card-desc">Enter a unique ID for your venue then connect your Spotify Premium account. Patrons will be able to queue songs directly to your speakers.</div>
 
   <div class="input-group">
     <label class="input-label">Venue ID</label>
-    <input type="text" id="venueId" placeholder="e.g. stuttgart-bar-one" value="">
-    <div style="font-size:11px;color:var(--muted);margin-top:6px;font-weight:300">Use lowercase letters and hyphens only. This is your unique identifier.</div>
+    <input type="text" id="venueId" placeholder="e.g. stuttgart-bar-one">
+    <div class="input-hint">Lowercase letters, numbers and hyphens only.</div>
   </div>
 
   <button class="btn-spotify" id="connectBtn" onclick="connectSpotify()">
@@ -77,13 +78,13 @@
     </div>
     <div class="info-row">
       <span class="info-label">Patron URL</span>
-      <span class="info-value" id="infoPatronUrl" style="max-width:200px;overflow:hidden;text-overflow:ellipsis"></span>
-      <button class="copy-btn" onclick="copyUrl()">Copy</button>
+      <span class="info-value" id="infoPatronUrl"></span>
+      <button class="copy-btn" onclick="copyUrl('patron')">Copy</button>
     </div>
     <div class="info-row">
       <span class="info-label">Bar Dashboard</span>
-      <span class="info-value" id="infoBarUrl" style="max-width:200px;overflow:hidden;text-overflow:ellipsis"></span>
-      <button class="copy-btn" onclick="copyBarUrl()">Copy</button>
+      <span class="info-value" id="infoBarUrl"></span>
+      <button class="copy-btn" onclick="copyUrl('bar')">Copy</button>
     </div>
     <div class="device-status" id="deviceStatus">
       <div class="dot grey" id="deviceDot"></div>
@@ -95,7 +96,6 @@
 <script>
 const BASE = window.location.origin;
 
-// Check for success/error on page load
 window.addEventListener('load', () => {
   const params = new URLSearchParams(window.location.search);
   const success = params.get('success');
@@ -109,20 +109,24 @@ window.addEventListener('load', () => {
   } else if (error) {
     showError(error);
   }
+
+  // Pre-fill venue ID from URL if provided
+  const prefilledVenue = params.get('venue');
+  if (prefilledVenue) {
+    const input = document.getElementById('venueId');
+    input.value = prefilledVenue;
+    input.readOnly = true;
+    input.style.opacity = '0.7';
+  }
 });
 
 function connectSpotify() {
   const venueId = document.getElementById('venueId').value.trim();
-  if (!venueId) {
-    alert('Please enter a venue ID first');
-    return;
-  }
-  if (!/^[a-z0-9-]+$/.test(venueId)) {
-    alert('Venue ID can only contain lowercase letters, numbers and hyphens');
-    return;
-  }
-  document.getElementById('connectBtn').disabled = true;
-  document.getElementById('connectBtn').textContent = 'Connecting...';
+  if (!venueId) { alert('Please enter a venue ID first'); return; }
+  if (!/^[a-z0-9-]+$/.test(venueId)) { alert('Venue ID can only contain lowercase letters, numbers and hyphens'); return; }
+  const btn = document.getElementById('connectBtn');
+  btn.disabled = true;
+  btn.textContent = 'Connecting...';
   window.location.href = `/auth/spotify?venueId=${venueId}`;
 }
 
@@ -159,7 +163,7 @@ async function checkDevice(venueId) {
       text.textContent = `Spotify active on: ${data.device}`;
     } else if (data.connected) {
       dot.className = 'dot grey';
-      text.textContent = 'Spotify connected — open Spotify on your device and play something to activate it';
+      text.textContent = 'Connected — open Spotify on your device and play something to activate';
     } else {
       dot.className = 'dot red';
       text.textContent = 'No Spotify device found — make sure Spotify is open and playing';
@@ -167,16 +171,14 @@ async function checkDevice(venueId) {
   } catch(e) {}
 }
 
-function copyUrl() {
-  const url = document.getElementById('infoPatronUrl').textContent;
-  navigator.clipboard.writeText(url);
-  alert('Patron URL copied!');
-}
-
-function copyBarUrl() {
-  const url = document.getElementById('infoBarUrl').textContent;
-  navigator.clipboard.writeText(url);
-  alert('Bar dashboard URL copied!');
+function copyUrl(type) {
+  const venueId = document.getElementById('venueId').value.trim();
+  const url = type === 'patron' ? `${BASE}?venue=${venueId}` : `${BASE}/bar?venue=${venueId}`;
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = event.target;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 2000);
+  });
 }
 </script>
 </body>
