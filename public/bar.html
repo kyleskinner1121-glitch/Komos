@@ -6,65 +6,73 @@
 <title>Komos — Bar Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
-  :root { --black: #0a0a0a; --dark: #111; --card: #1a1a1a; --border: #2a2a2a; --gold: #c9a84c; --gold-light: #e8c97a; --white: #f0ece4; --muted: #666; --green: #27ae60; --red: #e74c3c; }
+  :root { --black: #120E2E; --dark: #1A1245; --card: #231960; --border: #3D3284; --orange: #FF5500; --orange-light: #FF7733; --white: #FFFFFF; --muted: #9B93CC; --green: #27ae60; --red: #e74c3c; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--black); color: var(--white); font-family: 'DM Sans', sans-serif; min-height: 100vh; }
-  .header { background: var(--dark); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
-  .logo { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 3px; color: var(--gold); }
+  .header { background: var(--dark); border-bottom: 2px solid var(--orange); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .logo { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 4px; color: var(--orange); }
+  .header-right { display: flex; align-items: center; gap: 12px; }
   .live-dot { width: 8px; height: 8px; background: var(--green); border-radius: 50%; display: inline-block; margin-right: 6px; animation: pulse 2s infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
   .status { font-size: 12px; color: var(--muted); display: flex; align-items: center; }
-  .main { display: grid; grid-template-columns: 1fr 320px; gap: 0; min-height: calc(100vh - 61px); }
+  .auto-badge { background: rgba(29,185,84,0.15); border: 1px solid rgba(29,185,84,0.3); color: #1db954; font-size: 10px; padding: 3px 10px; border-radius: 20px; letter-spacing: 0.5px; }
+  .main { display: grid; grid-template-columns: 1fr 300px; gap: 0; min-height: calc(100vh - 62px); }
   .queue-main { padding: 24px; border-right: 1px solid var(--border); }
-  .section-title { font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 2px; color: var(--muted); margin-bottom: 16px; }
-  .now-playing { background: linear-gradient(135deg, rgba(29,185,84,0.15), rgba(29,185,84,0.05)); border: 1px solid rgba(29,185,84,0.4); border-radius: 12px; padding: 20px; margin-bottom: 24px; display: none; }
+  .section-title { font-family: 'Bebas Neue', sans-serif; font-size: 16px; letter-spacing: 3px; color: var(--muted); margin-bottom: 16px; text-transform: uppercase; }
+  .now-playing { background: linear-gradient(135deg, rgba(29,185,84,0.15), rgba(29,185,84,0.05)); border: 1px solid rgba(29,185,84,0.4); border-radius: 12px; padding: 18px; margin-bottom: 20px; display: none; }
   .now-playing.show { display: block; }
   .now-playing .label { font-size: 10px; letter-spacing: 3px; color: #1db954; text-transform: uppercase; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
   .now-playing .song { display: flex; align-items: center; gap: 14px; }
-  .now-playing img { width: 56px; height: 56px; border-radius: 6px; object-fit: cover; }
-  .now-playing .name { font-size: 18px; font-weight: 500; }
-  .now-playing .artist { font-size: 13px; color: var(--muted); margin-top: 2px; }
-  .progress-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 12px; }
+  .now-playing img { width: 52px; height: 52px; border-radius: 6px; object-fit: cover; }
+  .now-playing .name { font-size: 16px; font-weight: 500; }
+  .now-playing .artist { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .progress-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 10px; }
   .progress-fill { height: 3px; background: #1db954; border-radius: 2px; transition: width 1s linear; }
-  .queue-item { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 8px; display: flex; align-items: center; gap: 14px; transition: opacity 0.3s; }
-  .q-num { font-family: 'Bebas Neue', sans-serif; font-size: 24px; color: var(--muted); width: 28px; text-align: center; flex-shrink: 0; }
-  .q-img { width: 48px; height: 48px; border-radius: 6px; object-fit: cover; background: var(--border); flex-shrink: 0; }
+  .queue-item { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 12px; transition: border-color 0.15s; }
+  .queue-item:hover { border-color: var(--orange); }
+  .q-num { font-family: 'Bebas Neue', sans-serif; font-size: 22px; color: var(--orange); width: 28px; text-align: center; flex-shrink: 0; }
+  .q-img { width: 46px; height: 46px; border-radius: 6px; object-fit: cover; background: var(--border); flex-shrink: 0; }
   .q-info { flex: 1; min-width: 0; }
   .q-name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .q-artist { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .q-actions { display: flex; gap: 8px; flex-shrink: 0; }
-  .btn-played { background: var(--green); color: white; border: none; border-radius: 6px; padding: 8px 14px; font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; cursor: pointer; }
-  .btn-skip { background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-family: 'DM Sans', sans-serif; font-size: 12px; cursor: pointer; }
+  .btn-played { background: var(--green); color: white; border: none; border-radius: 6px; padding: 8px 14px; font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; cursor: pointer; transition: opacity 0.15s; }
+  .btn-played:hover { opacity: 0.85; }
+  .btn-skip { background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-family: 'DM Sans', sans-serif; font-size: 12px; cursor: pointer; transition: color 0.15s, border-color 0.15s; }
   .btn-skip:hover { color: var(--red); border-color: var(--red); }
   .empty-queue { text-align: center; padding: 60px 20px; color: var(--muted); }
   .empty-queue .icon { font-size: 40px; margin-bottom: 12px; opacity: 0.3; }
-  .empty-queue p { font-size: 13px; font-weight: 300; }
-  .sidebar { padding: 24px; }
-  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+  .empty-queue p { font-size: 13px; font-weight: 300; line-height: 1.6; }
+  .sidebar { padding: 24px; background: var(--dark); }
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 10px; }
   .stat-label { font-size: 10px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
-  .stat-value { font-family: 'Bebas Neue', sans-serif; font-size: 32px; color: var(--gold); letter-spacing: 1px; }
+  .stat-value { font-family: 'Bebas Neue', sans-serif; font-size: 36px; color: var(--orange); letter-spacing: 1px; }
   .stat-sub { font-size: 11px; color: var(--muted); font-weight: 300; margin-top: 2px; }
-  .played-list { margin-top: 24px; }
+  .played-list { margin-top: 20px; }
   .played-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); opacity: 0.5; }
-  .played-item img { width: 32px; height: 32px; border-radius: 4px; object-fit: cover; }
-  .played-item .name { font-size: 12px; }
+  .played-item img { width: 32px; height: 32px; border-radius: 4px; object-fit: cover; background: var(--border); }
+  .played-item .name { font-size: 12px; font-weight: 500; }
   .played-item .artist { font-size: 11px; color: var(--muted); }
-  .auto-badge { background: rgba(29,185,84,0.15); border: 1px solid rgba(29,185,84,0.3); color: #1db954; font-size: 10px; padding: 2px 8px; border-radius: 20px; margin-left: 8px; }
   @media (max-width: 768px) { .main { grid-template-columns: 1fr; } .sidebar { border-top: 1px solid var(--border); } }
 </style>
 </head>
 <body>
+
 <div class="header">
   <div>
     <span class="logo">Komos</span>
-    <span style="font-family:'DM Sans',sans-serif;font-size:13px;color:var(--muted);margin-left:8px;letter-spacing:1px">Bar Dashboard</span>
-    <span class="auto-badge">Auto-sync on</span>
+    <span style="font-family:'DM Sans',sans-serif;font-size:12px;color:var(--muted);margin-left:10px;letter-spacing:2px;text-transform:uppercase">Bar Dashboard</span>
   </div>
-  <div class="status"><span class="live-dot"></span> Live</div>
+  <div class="header-right">
+    <span class="auto-badge">⚡ Auto-sync</span>
+    <div class="status"><span class="live-dot"></span> Live</div>
+  </div>
 </div>
+
 <div class="main">
   <div class="queue-main">
-    <p class="section-title">Now Playing & Queue</p>
+    <p class="section-title">Song Queue</p>
+
     <div class="now-playing" id="nowPlaying">
       <div class="label"><span class="live-dot"></span> Now playing on Spotify</div>
       <div class="song">
@@ -72,12 +80,13 @@
         <div style="flex:1">
           <div class="name" id="npName"></div>
           <div class="artist" id="npArtist"></div>
-          <div class="progress-bar" style="margin-top:8px">
+          <div class="progress-bar">
             <div class="progress-fill" id="progressFill" style="width:0%"></div>
           </div>
         </div>
       </div>
     </div>
+
     <div id="queueList">
       <div class="empty-queue">
         <div class="icon">🎵</div>
@@ -85,26 +94,32 @@
       </div>
     </div>
   </div>
+
   <div class="sidebar">
     <p class="section-title">Tonight</p>
+
     <div class="stat-card">
       <div class="stat-label">Songs played</div>
       <div class="stat-value" id="statPlayed">0</div>
       <div class="stat-sub">this session</div>
     </div>
+
     <div class="stat-card">
-      <div class="stat-label">Revenue generated</div>
+      <div class="stat-label">Revenue</div>
       <div class="stat-value" id="statRevenue">€0</div>
-      <div class="stat-sub">at €1.00 per song</div>
+      <div class="stat-sub">at €0.99 per song</div>
     </div>
+
     <div class="stat-card">
-      <div class="stat-label">In queue now</div>
+      <div class="stat-label">In queue</div>
       <div class="stat-value" id="statQueue">0</div>
       <div class="stat-sub">songs pending</div>
     </div>
+
     <div class="played-list" id="playedList"></div>
   </div>
 </div>
+
 <script>
 const VENUE_ID = new URLSearchParams(window.location.search).get('venue') || 'default';
 let lastNowPlayingUri = null;
@@ -130,7 +145,6 @@ async function checkNowPlaying() {
       document.getElementById('nowPlaying').classList.add('show');
       const progress = (data.progress_ms / data.duration_ms) * 100;
       document.getElementById('progressFill').style.width = `${progress}%`;
-      // Auto-clear if this song is in our queue
       if (data.uri && data.uri !== lastNowPlayingUri) {
         lastNowPlayingUri = data.uri;
         await fetch('/api/queue/auto-clear', {
@@ -155,7 +169,7 @@ function renderQueue(queue) {
   el.innerHTML = queue.map((s, i) => `
     <div class="queue-item" id="item-${s.id}">
       <div class="q-num">${i + 1}</div>
-      <img class="q-img" src="${s.image || ''}" onerror="this.style.background='#2a2a2a'" alt="">
+      <img class="q-img" src="${s.image || ''}" onerror="this.style.background='#3D3284'" alt="">
       <div class="q-info">
         <div class="q-name">${s.name}</div>
         <div class="q-artist">${s.artist}</div>
@@ -170,7 +184,7 @@ function renderQueue(queue) {
 
 function renderStats(queue, played) {
   document.getElementById('statPlayed').textContent = played.length;
-  document.getElementById('statRevenue').textContent = `€${played.length}`;
+  document.getElementById('statRevenue').textContent = `€${(played.length * 0.99).toFixed(2)}`;
   document.getElementById('statQueue').textContent = queue.length;
 }
 
@@ -180,7 +194,7 @@ function renderPlayed(played) {
     `<p style="font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-bottom:10px">Recently played</p>` +
     [...played].reverse().map(s => `
       <div class="played-item">
-        <img src="${s.image || ''}" onerror="this.style.background='#2a2a2a'" alt="">
+        <img src="${s.image || ''}" onerror="this.style.background='#3D3284'" alt="">
         <div>
           <div class="name">${s.name}</div>
           <div class="artist">${s.artist}</div>
@@ -203,8 +217,6 @@ async function skipSong(id) {
   loadQueue();
 }
 
-// Poll queue every 5 seconds
-// Poll now playing every 3 seconds for smooth auto-clear
 loadQueue();
 checkNowPlaying();
 setInterval(loadQueue, 5000);
