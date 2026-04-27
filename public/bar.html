@@ -17,14 +17,16 @@
   .main { display: grid; grid-template-columns: 1fr 320px; gap: 0; min-height: calc(100vh - 61px); }
   .queue-main { padding: 24px; border-right: 1px solid var(--border); }
   .section-title { font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 2px; color: var(--muted); margin-bottom: 16px; }
-  .now-playing { background: linear-gradient(135deg, rgba(201,168,76,0.15), rgba(201,168,76,0.05)); border: 1px solid rgba(201,168,76,0.4); border-radius: 12px; padding: 20px; margin-bottom: 24px; display: none; }
+  .now-playing { background: linear-gradient(135deg, rgba(29,185,84,0.15), rgba(29,185,84,0.05)); border: 1px solid rgba(29,185,84,0.4); border-radius: 12px; padding: 20px; margin-bottom: 24px; display: none; }
   .now-playing.show { display: block; }
-  .now-playing .label { font-size: 10px; letter-spacing: 3px; color: var(--gold); text-transform: uppercase; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+  .now-playing .label { font-size: 10px; letter-spacing: 3px; color: #1db954; text-transform: uppercase; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
   .now-playing .song { display: flex; align-items: center; gap: 14px; }
   .now-playing img { width: 56px; height: 56px; border-radius: 6px; object-fit: cover; }
   .now-playing .name { font-size: 18px; font-weight: 500; }
   .now-playing .artist { font-size: 13px; color: var(--muted); margin-top: 2px; }
-  .queue-item { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 8px; display: flex; align-items: center; gap: 14px; }
+  .progress-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 12px; }
+  .progress-fill { height: 3px; background: #1db954; border-radius: 2px; transition: width 1s linear; }
+  .queue-item { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 8px; display: flex; align-items: center; gap: 14px; transition: opacity 0.3s; }
   .q-num { font-family: 'Bebas Neue', sans-serif; font-size: 24px; color: var(--muted); width: 28px; text-align: center; flex-shrink: 0; }
   .q-img { width: 48px; height: 48px; border-radius: 6px; object-fit: cover; background: var(--border); flex-shrink: 0; }
   .q-info { flex: 1; min-width: 0; }
@@ -47,6 +49,7 @@
   .played-item img { width: 32px; height: 32px; border-radius: 4px; object-fit: cover; }
   .played-item .name { font-size: 12px; }
   .played-item .artist { font-size: 11px; color: var(--muted); }
+  .auto-badge { background: rgba(29,185,84,0.15); border: 1px solid rgba(29,185,84,0.3); color: #1db954; font-size: 10px; padding: 2px 8px; border-radius: 20px; margin-left: 8px; }
   @media (max-width: 768px) { .main { grid-template-columns: 1fr; } .sidebar { border-top: 1px solid var(--border); } }
 </style>
 </head>
@@ -55,26 +58,30 @@
   <div>
     <span class="logo">Komos</span>
     <span style="font-family:'DM Sans',sans-serif;font-size:13px;color:var(--muted);margin-left:8px;letter-spacing:1px">Bar Dashboard</span>
+    <span class="auto-badge">Auto-sync on</span>
   </div>
-  <div class="status"><span class="live-dot"></span> Live — refreshing every 5s</div>
+  <div class="status"><span class="live-dot"></span> Live</div>
 </div>
 <div class="main">
   <div class="queue-main">
-    <p class="section-title">Song Queue</p>
+    <p class="section-title">Now Playing & Queue</p>
     <div class="now-playing" id="nowPlaying">
-      <div class="label"><span class="live-dot"></span> Up next</div>
+      <div class="label"><span class="live-dot"></span> Now playing on Spotify</div>
       <div class="song">
         <img id="npImg" src="" alt="">
-        <div>
+        <div style="flex:1">
           <div class="name" id="npName"></div>
           <div class="artist" id="npArtist"></div>
+          <div class="progress-bar" style="margin-top:8px">
+            <div class="progress-fill" id="progressFill" style="width:0%"></div>
+          </div>
         </div>
       </div>
     </div>
     <div id="queueList">
       <div class="empty-queue">
         <div class="icon">🎵</div>
-        <p>No songs in queue yet.<br>Share the QR code to get started.</p>
+        <p>No songs in queue yet.<br>Share the QR code with patrons.</p>
       </div>
     </div>
   </div>
@@ -99,9 +106,12 @@
   </div>
 </div>
 <script>
+const VENUE_ID = new URLSearchParams(window.location.search).get('venue') || 'default';
+let lastNowPlayingUri = null;
+
 async function loadQueue() {
   try {
-    const r = await fetch('/api/queue');
+    const r = await fetch(`/api/queue?venueId=${VENUE_ID}`);
     const data = await r.json();
     renderQueue(data.queue || []);
     renderStats(data.queue || [], data.played || []);
@@ -109,18 +119,39 @@ async function loadQueue() {
   } catch(e) {}
 }
 
+async function checkNowPlaying() {
+  try {
+    const r = await fetch(`/api/now-playing?venueId=${VENUE_ID}`);
+    const data = await r.json();
+    if (data.playing) {
+      document.getElementById('npImg').src = data.image || '';
+      document.getElementById('npName').textContent = data.name;
+      document.getElementById('npArtist').textContent = data.artist;
+      document.getElementById('nowPlaying').classList.add('show');
+      const progress = (data.progress_ms / data.duration_ms) * 100;
+      document.getElementById('progressFill').style.width = `${progress}%`;
+      // Auto-clear if this song is in our queue
+      if (data.uri && data.uri !== lastNowPlayingUri) {
+        lastNowPlayingUri = data.uri;
+        await fetch('/api/queue/auto-clear', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ venueId: VENUE_ID, uri: data.uri })
+        });
+        await loadQueue();
+      }
+    } else {
+      document.getElementById('nowPlaying').classList.remove('show');
+    }
+  } catch(e) {}
+}
+
 function renderQueue(queue) {
   const el = document.getElementById('queueList');
   if (!queue.length) {
-    document.getElementById('nowPlaying').classList.remove('show');
     el.innerHTML = `<div class="empty-queue"><div class="icon">🎵</div><p>No songs in queue yet.<br>Share the QR code with patrons.</p></div>`;
     return;
   }
-  const first = queue[0];
-  document.getElementById('npImg').src = first.image || '';
-  document.getElementById('npName').textContent = first.name;
-  document.getElementById('npArtist').textContent = first.artist;
-  document.getElementById('nowPlaying').classList.add('show');
   el.innerHTML = queue.map((s, i) => `
     <div class="queue-item" id="item-${s.id}">
       <div class="q-num">${i + 1}</div>
@@ -172,8 +203,12 @@ async function skipSong(id) {
   loadQueue();
 }
 
+// Poll queue every 5 seconds
+// Poll now playing every 3 seconds for smooth auto-clear
 loadQueue();
+checkNowPlaying();
 setInterval(loadQueue, 5000);
+setInterval(checkNowPlaying, 3000);
 </script>
 </body>
 </html>
