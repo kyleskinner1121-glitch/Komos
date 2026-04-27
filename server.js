@@ -16,7 +16,6 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// Create tables if they don't exist
 async function initDB() {
   try {
     await pool.query(`
@@ -97,7 +96,6 @@ async function getVenueToken(venueId) {
     if (Date.now() < parseInt(tokenData.expires_at)) {
       return tokenData.access_token;
     }
-    // Refresh the token
     if (!tokenData.refresh_token) return null;
     const creds = Buffer.from(`${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`).toString('base64');
     const r = await fetch('https://accounts.spotify.com/api/token', {
@@ -175,6 +173,46 @@ async function addToSpotifyQueue(venueId, uri) {
     return false;
   }
 }
+
+// ── NOW PLAYING ──
+app.get('/api/now-playing', async (req, res) => {
+  const venueId = req.query.venueId || 'default';
+  const token = await getVenueToken(venueId);
+  if (!token) return res.json({ playing: false });
+  try {
+    const r = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (r.status === 204 || r.status === 404) return res.json({ playing: false });
+    const data = await r.json();
+    if (!data || !data.item) return res.json({ playing: false });
+    res.json({
+      playing: true,
+      uri: data.item.uri,
+      name: data.item.name,
+      artist: data.item.artists.map(a => a.name).join(', '),
+      image: data.item.album.images[1]?.url || data.item.album.images[0]?.url,
+      progress_ms: data.progress_ms,
+      duration_ms: data.item.duration_ms
+    });
+  } catch (e) {
+    res.json({ playing: false });
+  }
+});
+
+// ── AUTO CLEAR PLAYED SONGS ──
+app.post('/api/queue/auto-clear', async (req, res) => {
+  const { venueId, uri } = req.body;
+  try {
+    const result = await pool.query(
+      "UPDATE songs SET status = 'played', played_at = NOW() WHERE venue_id = $1 AND uri = $2 AND status = 'queued' RETURNING *",
+      [venueId, uri]
+    );
+    res.json({ cleared: result.rowCount });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ── VENUE STATUS ──
 app.get('/api/venue/status', async (req, res) => {
@@ -262,7 +300,7 @@ app.post('/api/create-payment', async (req, res) => {
       }],
       mode: 'payment',
       success_url: `${process.env.BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}&track_id=${trackId}&track_name=${encodeURIComponent(trackName)}&artist=${encodeURIComponent(artist)}&image=${encodeURIComponent(image || '')}&uri=${encodeURIComponent(uri)}&venue_id=${venueId}`,
-      cancel_url: `${process.env.BASE_URL}`
+      cancel_url: `${process.env.BASE_URL}?venue=${venueId}`
     });
     res.json({ url: session.url });
   } catch (e) {
