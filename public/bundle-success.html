@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Komos — Credits Added!</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --black: #120E2E; --dark: #1A1245; --card: #231960; --border: #3D3284; --orange: #FF5500; --orange-light: #FF7733; --white: #FFFFFF; --muted: #9B93CC; --green: #27ae60; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--black); color: var(--white); font-family: 'DM Sans', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center; }
+  .check { width: 88px; height: 88px; background: rgba(255,85,0,0.15); border: 2px solid var(--orange); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 36px; margin: 0 auto 24px; animation: pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+  @keyframes pop { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  h1 { font-family: 'Bebas Neue', sans-serif; font-size: 48px; letter-spacing: 3px; color: var(--orange); margin-bottom: 8px; }
+  .subtitle { color: var(--muted); font-size: 14px; font-weight: 300; line-height: 1.6; margin-bottom: 32px; }
+  .credits-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 24px; width: 100%; max-width: 360px; margin-bottom: 32px; }
+  .credits-label { font-size: 11px; letter-spacing: 3px; color: var(--muted); text-transform: uppercase; margin-bottom: 8px; }
+  .credits-number { font-family: 'Bebas Neue', sans-serif; font-size: 72px; color: var(--orange); letter-spacing: 2px; line-height: 1; }
+  .credits-sub { font-size: 13px; color: var(--muted); margin-top: 4px; font-weight: 300; }
+  .how-to { background: rgba(255,85,0,0.08); border: 1px solid rgba(255,85,0,0.2); border-radius: 10px; padding: 16px; width: 100%; max-width: 360px; margin-bottom: 28px; text-align: left; }
+  .how-to-title { font-size: 11px; letter-spacing: 2px; color: var(--orange); text-transform: uppercase; margin-bottom: 10px; font-weight: 500; }
+  .how-to-step { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; font-size: 13px; color: var(--muted); font-weight: 300; }
+  .how-to-step:last-child { margin-bottom: 0; }
+  .step-num { background: var(--orange); color: white; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 500; flex-shrink: 0; margin-top: 1px; }
+  .btn-primary { background: var(--orange); color: white; border: none; border-radius: 12px; font-family: 'Bebas Neue', sans-serif; font-size: 20px; letter-spacing: 2px; padding: 16px 40px; cursor: pointer; text-decoration: none; display: inline-block; }
+  .loading { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--orange); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="check">♫</div>
+<h1>Credits Added!</h1>
+<div class="subtitle">Your song credits are ready to use.<br>Search any song and queue it instantly.</div>
+
+<div class="credits-card">
+  <div class="credits-label">Your credits</div>
+  <div id="loadingSpinner">
+    <div class="spinner"></div>
+    <div class="loading">Loading your credits...</div>
+  </div>
+  <div id="creditsDisplay" style="display:none">
+    <div class="credits-number" id="creditsNum">0</div>
+    <div class="credits-sub">songs remaining</div>
+  </div>
+</div>
+
+<div class="how-to">
+  <div class="how-to-title">How to use your credits</div>
+  <div class="how-to-step">
+    <div class="step-num">1</div>
+    <span>Search for any song in the jukebox</span>
+  </div>
+  <div class="how-to-step">
+    <div class="step-num">2</div>
+    <span>Tap the song and choose "Use 1 Credit"</span>
+  </div>
+  <div class="how-to-step">
+    <div class="step-num">3</div>
+    <span>Your song is instantly added to the bar's queue</span>
+  </div>
+</div>
+
+<a href="#" class="btn-primary" id="backBtn">Start Requesting Songs</a>
+
+<script>
+async function init() {
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get('session_id');
+  const bundle = params.get('bundle');
+  const venueId = params.get('venue_id') || 'default';
+
+  document.getElementById('backBtn').href = venueId !== 'default' ? `/?venue=${venueId}` : '/';
+
+  if (sessionId && bundle) {
+    try {
+      const r = await fetch('/api/bundle/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, bundle })
+      });
+      const data = await r.json();
+      if (data.success) {
+        document.getElementById('loadingSpinner').style.display = 'none';
+        document.getElementById('creditsNum').textContent = data.credits;
+        document.getElementById('creditsDisplay').style.display = 'block';
+      } else {
+        document.getElementById('loadingSpinner').innerHTML = `<div style="color:#e74c3c;font-size:13px">${data.error || 'Something went wrong'}</div>`;
+      }
+    } catch(e) {
+      document.getElementById('loadingSpinner').innerHTML = `<div style="color:#e74c3c;font-size:13px">Failed to load credits. Please refresh.</div>`;
+    }
+  } else {
+    // Just show current credits
+    try {
+      const r = await fetch('/api/auth/me');
+      const data = await r.json();
+      if (data.loggedIn) {
+        document.getElementById('loadingSpinner').style.display = 'none';
+        document.getElementById('creditsNum').textContent = data.user.credits;
+        document.getElementById('creditsDisplay').style.display = 'block';
+      }
+    } catch(e) {}
+  }
+}
+
+init();
+</script>
+</body>
+</html>
