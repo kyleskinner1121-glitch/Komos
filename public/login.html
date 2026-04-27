@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Komos — Sign In</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --black: #120E2E; --dark: #1A1245; --card: #231960; --border: #3D3284; --orange: #FF5500; --orange-light: #FF7733; --white: #FFFFFF; --muted: #9B93CC; --green: #27ae60; --red: #e74c3c; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--black); color: var(--white); font-family: 'DM Sans', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
+  .logo { font-family: 'Bebas Neue', sans-serif; font-size: 52px; letter-spacing: 5px; color: var(--orange); margin-bottom: 4px; text-align: center; }
+  .subtitle { font-size: 11px; letter-spacing: 4px; color: var(--muted); text-transform: uppercase; margin-bottom: 40px; text-align: center; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 32px; width: 100%; max-width: 400px; }
+  .tabs { display: flex; gap: 0; margin-bottom: 28px; background: var(--dark); border-radius: 10px; padding: 4px; }
+  .tab { flex: 1; text-align: center; padding: 10px; font-family: 'Bebas Neue', sans-serif; font-size: 16px; letter-spacing: 2px; color: var(--muted); cursor: pointer; border-radius: 8px; transition: all 0.2s; border: none; background: transparent; }
+  .tab.active { background: var(--orange); color: white; }
+  .form { display: none; }
+  .form.active { display: block; }
+  .input-group { margin-bottom: 16px; }
+  .input-label { font-size: 11px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; display: block; }
+  input[type="email"], input[type="password"] { width: 100%; background: var(--dark); border: 1px solid var(--border); border-radius: 8px; color: var(--white); font-family: 'DM Sans', sans-serif; font-size: 14px; padding: 12px 14px; outline: none; transition: border-color 0.2s; }
+  input[type="email"]:focus, input[type="password"]:focus { border-color: var(--orange); }
+  input::placeholder { color: var(--muted); }
+  .btn-submit { width: 100%; background: var(--orange); color: white; border: none; border-radius: 10px; font-family: 'Bebas Neue', sans-serif; font-size: 20px; letter-spacing: 2px; padding: 16px; cursor: pointer; transition: opacity 0.15s; margin-top: 8px; }
+  .btn-submit:hover { opacity: 0.9; }
+  .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+  .error-box { background: rgba(231,76,60,0.1); border: 1px solid rgba(231,76,60,0.3); border-radius: 8px; padding: 12px; font-size: 13px; color: #e74c3c; margin-bottom: 16px; display: none; }
+  .error-box.show { display: block; }
+  .back-link { text-align: center; margin-top: 20px; font-size: 13px; color: var(--muted); }
+  .back-link a { color: var(--orange-light); text-decoration: none; }
+  .guest-link { text-align: center; margin-top: 16px; }
+  .guest-link button { background: transparent; border: none; color: var(--muted); font-size: 12px; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: underline; }
+  .divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; }
+  .divider-line { flex: 1; height: 1px; background: var(--border); }
+  .divider-text { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .benefits { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
+  .benefit { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; color: var(--muted); font-weight: 300; }
+  .benefit-icon { color: var(--orange); font-size: 16px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<div class="logo">Komos</div>
+<div class="subtitle">Sign In or Create Account</div>
+
+<div class="card">
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('login')">Sign In</button>
+    <button class="tab" onclick="switchTab('signup')">Create Account</button>
+  </div>
+
+  <!-- LOGIN FORM -->
+  <div class="form active" id="loginForm">
+    <div class="error-box" id="loginError"></div>
+    <div class="input-group">
+      <label class="input-label">Email</label>
+      <input type="email" id="loginEmail" placeholder="your@email.com" autocomplete="email">
+    </div>
+    <div class="input-group">
+      <label class="input-label">Password</label>
+      <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn-submit" id="loginBtn" onclick="login()">Sign In</button>
+  </div>
+
+  <!-- SIGNUP FORM -->
+  <div class="form" id="signupForm">
+    <div class="error-box" id="signupError"></div>
+    <div class="input-group">
+      <label class="input-label">Email</label>
+      <input type="email" id="signupEmail" placeholder="your@email.com" autocomplete="email">
+    </div>
+    <div class="input-group">
+      <label class="input-label">Password</label>
+      <input type="password" id="signupPassword" placeholder="Min 6 characters" autocomplete="new-password">
+    </div>
+    <button class="btn-submit" id="signupBtn" onclick="signup()">Create Account</button>
+
+    <div class="benefits">
+      <div class="benefit"><span class="benefit-icon">♫</span> Buy song bundles and save</div>
+      <div class="benefit"><span class="benefit-icon">⚡</span> One tap to queue — no payment each time</div>
+      <div class="benefit"><span class="benefit-icon">🎯</span> Credits work at any Komos venue</div>
+    </div>
+  </div>
+</div>
+
+<div class="back-link">
+  <a href="#" id="backLink">← Back to jukebox</a>
+</div>
+
+<div class="guest-link">
+  <button onclick="continueAsGuest()">Continue as guest instead</button>
+</div>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const venueId = params.get('venue') || 'default';
+const next = params.get('next');
+
+document.getElementById('backLink').href = venueId !== 'default' ? `/?venue=${venueId}` : '/';
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', (i === 0 && tab === 'login') || (i === 1 && tab === 'signup'));
+  });
+  document.getElementById('loginForm').classList.toggle('active', tab === 'login');
+  document.getElementById('signupForm').classList.toggle('active', tab === 'signup');
+}
+
+async function login() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const btn = document.getElementById('loginBtn');
+  const errorBox = document.getElementById('loginError');
+  if (!email || !password) { showError(errorBox, 'Please fill in all fields'); return; }
+  btn.disabled = true;
+  btn.textContent = 'Signing in...';
+  try {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await r.json();
+    if (data.success) {
+      const dest = venueId !== 'default' ? `/?venue=${venueId}` : '/';
+      window.location.href = dest;
+    } else {
+      showError(errorBox, data.error || 'Login failed');
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+    }
+  } catch(e) {
+    showError(errorBox, 'Something went wrong. Try again.');
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+  }
+}
+
+async function signup() {
+  const email = document.getElementById('signupEmail').value.trim();
+  const password = document.getElementById('signupPassword').value;
+  const btn = document.getElementById('signupBtn');
+  const errorBox = document.getElementById('signupError');
+  if (!email || !password) { showError(errorBox, 'Please fill in all fields'); return; }
+  if (password.length < 6) { showError(errorBox, 'Password must be at least 6 characters'); return; }
+  btn.disabled = true;
+  btn.textContent = 'Creating account...';
+  try {
+    const r = await fetch('/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await r.json();
+    if (data.success) {
+      const dest = venueId !== 'default' ? `/?venue=${venueId}` : '/';
+      window.location.href = dest;
+    } else {
+      showError(errorBox, data.error || 'Signup failed');
+      btn.disabled = false;
+      btn.textContent = 'Create Account';
+    }
+  } catch(e) {
+    showError(errorBox, 'Something went wrong. Try again.');
+    btn.disabled = false;
+    btn.textContent = 'Create Account';
+  }
+}
+
+function continueAsGuest() {
+  sessionStorage.setItem('komos_guest', '1');
+  const dest = venueId !== 'default' ? `/?venue=${venueId}` : '/';
+  window.location.href = dest;
+}
+
+function showError(box, msg) {
+  box.textContent = msg;
+  box.classList.add('show');
+}
+
+// Allow enter key to submit
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const loginActive = document.getElementById('loginForm').classList.contains('active');
+    if (loginActive) login();
+    else signup();
+  }
+});
+</script>
+</body>
+</html>
