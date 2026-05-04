@@ -283,11 +283,9 @@ async function addToSpotifyQueue(venueId, uri) {
 }
 
 // ── SERVER-SIDE AUTO-CLEAR ──
-// Polls Spotify every 10 seconds for all connected venues.
-// When a song from our queue is currently playing, marks it as played.
+// Checks currently playing AND recently played to catch songs regardless of polling timing
 async function autoClearPlayed() {
   try {
-    // Get all venues that have queued songs
     const venuesResult = await pool.query(
       "SELECT DISTINCT venue_id FROM songs WHERE status = 'queued'"
     );
@@ -298,34 +296,54 @@ async function autoClearPlayed() {
         const token = await getVenueToken(venue_id);
         if (!token) continue;
 
-        const r = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
+        // Get queued songs for this venue
+        const queued = await pool.query(
+          "SELECT uri, name FROM songs WHERE venue_id = $1 AND status = 'queued'",
+          [venue_id]
+        );
+        if (!queued.rows.length) continue;
+
+        const queuedUris = new Set(queued.rows.map(s => s.uri));
+
+        // ── CHECK 1: Currently playing ──
+        const nowRes = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
           headers: { Authorization: `Bearer ${token}` }
         });
-
-        if (r.status === 204 || r.status === 404) continue;
-        const data = await r.json();
-        if (!data || !data.item) continue;
-
-        const currentUri = data.item.uri;
-        const progressMs = data.progress_ms;
-        const durationMs = data.item.duration_ms;
-
-        // Mark this song as played in our queue if it matches
-        const cleared = await pool.query(
-          "UPDATE songs SET status = 'played', played_at = NOW() WHERE venue_id = $1 AND uri = $2 AND status = 'queued' RETURNING name",
-          [venue_id, currentUri]
-        );
-
-        if (cleared.rowCount > 0) {
-          console.log(`[auto-clear] Marked as played: "${cleared.rows[0].name}" at venue ${venue_id}`);
+        if (nowRes.status === 200) {
+          const nowData = await nowRes.json();
+          if (nowData && nowData.item && queuedUris.has(nowData.item.uri)) {
+            const cleared = await pool.query(
+              "UPDATE songs SET status = 'played', played_at = NOW() WHERE venue_id = $1 AND uri = $2 AND status = 'queued' RETURNING name",
+              [venue_id, nowData.item.uri]
+            );
+            if (cleared.rowCount > 0) {
+              console.log(`[auto-clear] Now playing: "${cleared.rows[0].name}" at ${venue_id}`);
+            }
+          }
         }
 
-        // Also clear songs that are very close to finishing (within 5 seconds of end)
-        // This handles the edge case where polling misses the exact playing moment
-        if (durationMs - progressMs < 5000) {
-          // Song is almost done — pre-emptively check if next song in queue matches
-          // Nothing to do here, next poll will catch it
+        // ── CHECK 2: Recently played (catches songs polling missed) ──
+        const recentRes = await fetch('https://api.spotify.com/v1/me/player/recently-played?limit=5', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (recentRes.status === 200) {
+          const recentData = await recentRes.json();
+          if (recentData && recentData.items) {
+            for (const item of recentData.items) {
+              const uri = item.track.uri;
+              if (queuedUris.has(uri)) {
+                const cleared = await pool.query(
+                  "UPDATE songs SET status = 'played', played_at = NOW() WHERE venue_id = $1 AND uri = $2 AND status = 'queued' RETURNING name",
+                  [venue_id, uri]
+                );
+                if (cleared.rowCount > 0) {
+                  console.log(`[auto-clear] Recently played: "${cleared.rows[0].name}" at ${venue_id}`);
+                }
+              }
+            }
+          }
         }
+
       } catch (e) {
         // Silently continue — don't let one venue error stop others
       }
