@@ -58,10 +58,6 @@
   .bundle-price { font-size: 24px; font-weight: 500; color: var(--white); margin-top: 10px; }
   .bundle-saving { font-size: 11px; color: var(--green); margin-top: 2px; font-weight: 300; }
   .bundle-note { font-size: 12px; color: var(--muted); text-align: center; margin-top: 20px; font-weight: 300; line-height: 1.6; }
-  .login-prompt { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 20px; text-align: center; }
-  .login-prompt p { font-size: 13px; color: var(--muted); margin-bottom: 14px; font-weight: 300; line-height: 1.6; }
-  .btn-login { background: var(--orange); color: white; border: none; border-radius: 10px; font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 2px; padding: 14px 32px; cursor: pointer; width: 100%; margin-bottom: 8px; }
-  .btn-guest-link { background: transparent; border: none; color: var(--muted); font-size: 12px; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: underline; }
 
   .search-section { padding: 18px 20px; }
   .search-wrap { position: relative; }
@@ -127,34 +123,28 @@
     <button class="back-btn" onclick="closeBundleScreen()">←</button>
     <div class="bundle-title">Buy a Bundle</div>
   </div>
-  <div class="bundle-subtitle">Create an account to save and use credits at any Komos venue</div>
-
-  <div class="login-prompt" id="loginPrompt" style="display:none">
-    <p>Create a free account to buy bundles and save on songs.</p>
-    <button class="btn-login" onclick="goToLogin()">Sign In / Create Account</button>
-    <button class="btn-guest-link" onclick="closeBundleScreen()">Go back to jukebox</button>
-  </div>
+  <div class="bundle-subtitle">Save on songs — credits work at any Komos venue</div>
 
   <div id="bundleOptions">
     <div class="bundle-card" onclick="buyBundle('single')">
       <div class="bundle-songs">1 Song</div>
-      <div class="bundle-desc">Single song credit</div>
+      <div class="bundle-desc">Pay per song — no account needed</div>
       <div class="bundle-price">€0.99</div>
     </div>
     <div class="bundle-card featured" onclick="buyBundle('five')">
       <div class="featured-badge">Best Value</div>
       <div class="bundle-songs">5 Songs</div>
-      <div class="bundle-desc">5 song credits</div>
+      <div class="bundle-desc">5 song credits · account required</div>
       <div class="bundle-price">€3.99</div>
       <div class="bundle-saving">Save €1.00 vs single</div>
     </div>
     <div class="bundle-card" onclick="buyBundle('ten')">
       <div class="bundle-songs">10 Songs</div>
-      <div class="bundle-desc">10 song credits</div>
+      <div class="bundle-desc">10 song credits · account required</div>
       <div class="bundle-price">€5.99</div>
       <div class="bundle-saving">Save €3.91 vs single</div>
     </div>
-    <div class="bundle-note">Credits are stored in your account and work at any Komos venue.</div>
+    <div class="bundle-note">5 and 10 song credits are stored in your account and work at any Komos venue.</div>
   </div>
 </div>
 
@@ -170,17 +160,17 @@
   <h1>Your night.<br><em>Your music.</em></h1>
   <p>Search any song · Pay · Hear it in the bar</p>
   <div class="pricing-grid">
-    <div class="pricing-card" onclick="showBundleScreen()">
+    <div class="pricing-card" onclick="onPricingCardClick('single')">
       <div class="pricing-songs">1 Song</div>
       <div class="pricing-price">€0.99</div>
       <div class="pricing-per">per song</div>
     </div>
-    <div class="pricing-card" onclick="showBundleScreen()">
+    <div class="pricing-card" onclick="onPricingCardClick('five')">
       <div class="pricing-songs">5 Songs</div>
       <div class="pricing-price">€3.99</div>
       <div class="pricing-save">Save €1.00</div>
     </div>
-    <div class="pricing-card" onclick="showBundleScreen()">
+    <div class="pricing-card" onclick="onPricingCardClick('ten')">
       <div class="pricing-songs">10 Songs</div>
       <div class="pricing-price">€5.99</div>
       <div class="pricing-save">Save €3.91</div>
@@ -257,15 +247,19 @@ function updateCreditsDisplay() {
   }
 }
 
+// Pricing grid: single goes straight to search, bundles open bundle screen
+function onPricingCardClick(type) {
+  if (type === 'single') {
+    document.getElementById('searchInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => document.getElementById('searchInput').focus(), 400);
+    showToast('Search for a song below, then tap to pay €0.99');
+  } else {
+    showBundleScreen();
+  }
+}
+
 function showBundleScreen() {
   document.getElementById('bundleScreen').classList.add('show');
-  if (!currentUser) {
-    document.getElementById('loginPrompt').style.display = 'block';
-    document.getElementById('bundleOptions').style.display = 'none';
-  } else {
-    document.getElementById('loginPrompt').style.display = 'none';
-    document.getElementById('bundleOptions').style.display = 'block';
-  }
 }
 
 function closeBundleScreen() {
@@ -282,7 +276,18 @@ function openBundleFromModal() {
 }
 
 async function buyBundle(type) {
+  // Single song: no login needed — send to search
+  if (type === 'single') {
+    closeBundleScreen();
+    document.getElementById('searchInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => document.getElementById('searchInput').focus(), 400);
+    showToast('Search for a song below, then tap to pay €0.99');
+    return;
+  }
+
+  // 5 or 10 song bundles require login
   if (!currentUser) { goToLogin(); return; }
+
   try {
     const r = await fetch('/api/create-bundle-payment', {
       method: 'POST',
