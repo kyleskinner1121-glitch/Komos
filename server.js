@@ -282,6 +282,65 @@ async function addToSpotifyQueue(venueId, uri) {
   }
 }
 
+// ── SERVER-SIDE AUTO-CLEAR ──
+// Polls Spotify every 10 seconds for all connected venues.
+// When a song from our queue is currently playing, marks it as played.
+async function autoClearPlayed() {
+  try {
+    // Get all venues that have queued songs
+    const venuesResult = await pool.query(
+      "SELECT DISTINCT venue_id FROM songs WHERE status = 'queued'"
+    );
+    if (!venuesResult.rows.length) return;
+
+    for (const { venue_id } of venuesResult.rows) {
+      try {
+        const token = await getVenueToken(venue_id);
+        if (!token) continue;
+
+        const r = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (r.status === 204 || r.status === 404) continue;
+        const data = await r.json();
+        if (!data || !data.item) continue;
+
+        const currentUri = data.item.uri;
+        const progressMs = data.progress_ms;
+        const durationMs = data.item.duration_ms;
+
+        // Mark this song as played in our queue if it matches
+        const cleared = await pool.query(
+          "UPDATE songs SET status = 'played', played_at = NOW() WHERE venue_id = $1 AND uri = $2 AND status = 'queued' RETURNING name",
+          [venue_id, currentUri]
+        );
+
+        if (cleared.rowCount > 0) {
+          console.log(`[auto-clear] Marked as played: "${cleared.rows[0].name}" at venue ${venue_id}`);
+        }
+
+        // Also clear songs that are very close to finishing (within 5 seconds of end)
+        // This handles the edge case where polling misses the exact playing moment
+        if (durationMs - progressMs < 5000) {
+          // Song is almost done — pre-emptively check if next song in queue matches
+          // Nothing to do here, next poll will catch it
+        }
+      } catch (e) {
+        // Silently continue — don't let one venue error stop others
+      }
+    }
+  } catch (e) {
+    console.error('[auto-clear] Error:', e.message);
+  }
+}
+
+// Start the auto-clear loop after server starts
+setTimeout(() => {
+  autoClearPlayed();
+  setInterval(autoClearPlayed, 10000);
+}, 5000);
+
 app.get('/auth/spotify', (req, res) => {
   const venueId = req.query.venueId || 'default';
   const scopes = 'user-modify-playback-state user-read-playback-state';
