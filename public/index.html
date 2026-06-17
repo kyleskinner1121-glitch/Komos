@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Komos — Your Night, Your Music</title>
+<title>Zoros — Your Night, Your Music</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
 <style>
@@ -177,7 +177,7 @@
 
 <!-- Language Selection Screen -->
 <div class="lang-screen" id="langScreen">
-  <div class="lang-logo">Komos</div>
+  <div class="lang-logo">Zoros</div>
   <div class="lang-tagline">Your Night · Your Music</div>
   <div class="lang-prompt">Choose your language / Elige tu idioma</div>
   <button class="lang-btn" onclick="setLanguage('en')">
@@ -196,7 +196,7 @@
     <button class="back-btn" onclick="closeBundleScreen()">←</button>
     <div class="bundle-title" id="txt-bundle-title">Buy a Bundle</div>
   </div>
-  <div class="bundle-subtitle" id="txt-bundle-subtitle">Save on songs — credits work at any Komos venue</div>
+  <div class="bundle-subtitle" id="txt-bundle-subtitle">Save on songs — credits work at any Zoros venue</div>
   <div id="bundleOptions">
     <div class="bundle-card" onclick="selectBundle('single')">
       <div class="bundle-songs" id="txt-1song">1 Song</div>
@@ -216,7 +216,7 @@
       <div class="bundle-price">€5.99</div>
       <div class="bundle-saving" id="txt-10songs-save">Save €3.91 vs single</div>
     </div>
-    <div class="bundle-note" id="txt-bundle-note">5 and 10 song credits are stored in your account and work at any Komos venue.</div>
+    <div class="bundle-note" id="txt-bundle-note">5 and 10 song credits are stored in your account and work at any Zoros venue.</div>
   </div>
 </div>
 
@@ -234,7 +234,7 @@
 </div>
 
 <div class="header">
-  <div class="logo">Komos<span id="venueLabel">Your Night · Your Music</span></div>
+  <div class="logo">Zoros<span id="venueLabel">Your Night · Your Music</span></div>
   <div class="header-right">
     <div class="credits-badge" id="creditsBadge" onclick="showBundleScreen()">0 credits</div>
     <button class="queue-pill" onclick="openQueue()" id="txt-queue-btn">Queue <span id="queueBadge" class="queue-count-badge" style="display:none">0</span></button>
@@ -316,15 +316,15 @@ let lang = 'en';
 let pendingBundleType = null;
 
 const BUNDLES = {
-  single: { songs: '1 Song', songCount: 1, price: '€0.99', saving: null },
-  five:   { songs: '5 Songs', songCount: 5, price: '€3.99', saving: 'Save €1.00' },
-  ten:    { songs: '10 Songs', songCount: 10, price: '€5.99', saving: 'Save €3.91' },
+  single: { songs: '1 Song', price: '€0.99', saving: null },
+  five:   { songs: '5 Songs', price: '€3.99', saving: 'Save €1.00' },
+  ten:    { songs: '10 Songs', price: '€5.99', saving: 'Save €3.91' },
 };
 
 const BUNDLES_ES = {
-  single: { songs: '1 Canción', songCount: 1, price: '€0.99', saving: null },
-  five:   { songs: '5 Canciones', songCount: 5, price: '€3.99', saving: 'Ahorra €1.00' },
-  ten:    { songs: '10 Canciones', songCount: 10, price: '€5.99', saving: 'Ahorra €3.91' },
+  single: { songs: '1 Canción', price: '€0.99', saving: null },
+  five:   { songs: '5 Canciones', price: '€3.99', saving: 'Ahorra €1.00' },
+  ten:    { songs: '10 Canciones', price: '€5.99', saving: 'Ahorra €3.91' },
 };
 
 const T = {
@@ -337,7 +337,7 @@ const T = {
     p5save: 'Save €1.00',
     p10save: 'Save €3.91',
     bundleTitle: 'Buy a Bundle',
-    bundleSubtitle: 'Save on songs — credits work at any Komos venue',
+    bundleSubtitle: 'Save on songs — credits work at any Zoros venue',
     bestValue: 'Best Value',
     oneSong: '1 Song',
     oneSongDesc: 'Pay per song — no account needed',
@@ -347,7 +347,7 @@ const T = {
     tenSongs: '10 Songs',
     tenSongsDesc: '10 song credits · account required',
     tenSave: 'Save €3.91 vs single',
-    bundleNote: '5 and 10 song credits are stored in your account and work at any Komos venue.',
+    bundleNote: '5 and 10 song credits are stored in your account and work at any Zoros venue.',
     queueBtn: 'Queue',
     upNext: 'Up Next',
     emptyQueue: 'Queue is empty.\nBe the first to request a song.',
@@ -380,7 +380,7 @@ const T = {
     p5save: 'Ahorra €1.00',
     p10save: 'Ahorra €3.91',
     bundleTitle: 'Comprar un Pack',
-    bundleSubtitle: 'Ahorra en canciones — los créditos funcionan en cualquier local Komos',
+    bundleSubtitle: 'Ahorra en canciones — los créditos funcionan en cualquier local Zoros',
     bestValue: 'Mejor Precio',
     oneSong: '1 Canción',
     oneSongDesc: 'Paga por canción — sin cuenta',
@@ -390,7 +390,7 @@ const T = {
     tenSongs: '10 Canciones',
     tenSongsDesc: '10 créditos · se requiere cuenta',
     tenSave: 'Ahorra €3.91 vs individual',
-    bundleNote: 'Los créditos se guardan en tu cuenta y funcionan en cualquier local Komos.',
+    bundleNote: 'Los créditos se guardan en tu cuenta y funcionan en cualquier local Zoros.',
     queueBtn: 'Cola',
     upNext: 'A Continuación',
     emptyQueue: 'La cola está vacía.\nSé el primero en pedir una canción.',
@@ -466,7 +466,7 @@ function applyTranslations() {
 
 function setLanguage(l) {
   lang = l;
-  localStorage.setItem('komos_lang', l);
+  localStorage.setItem('zoros_lang', l);
   document.getElementById('langScreen').classList.add('hidden');
   applyTranslations();
   init();
@@ -474,7 +474,7 @@ function setLanguage(l) {
 
 function switchLanguage(l) {
   lang = l;
-  localStorage.setItem('komos_lang', l);
+  localStorage.setItem('zoros_lang', l);
   closeLangDropdown();
   applyTranslations();
 }
@@ -492,7 +492,7 @@ document.addEventListener('click', function(e) {
 });
 
 window.addEventListener('DOMContentLoaded', () => {
-  const saved = localStorage.getItem('komos_lang');
+  const saved = localStorage.getItem('zoros_lang');
   if (saved === 'en' || saved === 'es') {
     lang = saved;
     document.getElementById('langScreen').classList.add('hidden');
@@ -545,7 +545,6 @@ function closeBundleScreen() {
   document.getElementById('bundleScreen').classList.remove('show');
 }
 
-// Called when user taps a bundle card — show confirm sheet, no login yet
 function selectBundle(type) {
   if (type === 'single') {
     closeBundleScreen();
@@ -562,7 +561,6 @@ function selectBundle(type) {
   document.getElementById('confirmPrice').textContent = bundle.price;
   document.getElementById('confirmSaving').textContent = bundle.saving || '';
 
-  // Only show login note if not already logged in
   const loginNote = document.getElementById('confirmLoginNote');
   if (!currentUser) {
     loginNote.textContent = t('confirmLoginNote');
@@ -580,12 +578,10 @@ function closeBundleConfirm() {
   pendingBundleType = null;
 }
 
-// Only NOW do we check login and process payment
 async function confirmBuyBundle() {
   if (!pendingBundleType) return;
 
   if (!currentUser) {
-    // Save intent and send to login
     window.location.href = `/login?venue=${VENUE_ID}&next=bundles&bundle=${pendingBundleType}`;
     return;
   }
@@ -609,10 +605,6 @@ async function confirmBuyBundle() {
     btn.textContent = t('confirmBuy', bundle.price);
     btn.style.pointerEvents = 'auto';
   }
-}
-
-function goToLogin() {
-  window.location.href = `/login?venue=${VENUE_ID}&next=bundles`;
 }
 
 function openBundleFromModal() {
