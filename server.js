@@ -1,4 +1,4 @@
-// v2
+// v3
 require('dotenv').config();
 const express = require('express');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -54,7 +54,8 @@ async function initDB() {
         added_at TIMESTAMP DEFAULT NOW(),
         status VARCHAR(50) DEFAULT 'queued',
         played_at TIMESTAMP,
-        added_to_spotify BOOLEAN DEFAULT FALSE
+        added_to_spotify BOOLEAN DEFAULT FALSE,
+        amount_paid INTEGER DEFAULT 99
       )
     `);
     await pool.query(`
@@ -74,6 +75,7 @@ async function initDB() {
         venue_id VARCHAR(255) UNIQUE NOT NULL,
         email VARCHAR(255) UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
+        is_active BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
@@ -91,7 +93,12 @@ function requireAuth(req, res, next) {
   next();
 }
 
-// ── AUTH ROUTES ──
+function requireVenueAuth(req, res, next) {
+  if (!req.session.venueId) return res.status(401).json({ error: 'Not logged in as venue' });
+  next();
+}
+
+// ── USER AUTH ROUTES ──
 app.post('/api/auth/signup', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
@@ -157,7 +164,7 @@ app.post('/api/venue/login', async (req, res) => {
     if (!match) return res.status(400).json({ error: 'Incorrect password' });
     req.session.venueId = venue.venue_id;
     req.session.venueName = venue.name;
-    res.json({ success: true, venue: { name: venue.name, city: venue.city, venueId: venue.venue_id } });
+    res.json({ success: true, venue: { name: venue.name, city: venue.city, venueId: venue.venue_id, isActive: venue.is_active } });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -172,17 +179,108 @@ app.post('/api/venue/logout', (req, res) => {
 app.get('/api/venue/me', async (req, res) => {
   if (!req.session.venueId) return res.json({ loggedIn: false });
   try {
-    const result = await pool.query('SELECT name, city, venue_id FROM venues WHERE venue_id = $1', [req.session.venueId]);
+    const result = await pool.query('SELECT name, city, venue_id, is_active FROM venues WHERE venue_id = $1', [req.session.venueId]);
     if (!result.rows.length) return res.json({ loggedIn: false });
     const venue = result.rows[0];
     const token = await getVenueToken(venue.venue_id);
-    res.json({ loggedIn: true, venue: { name: venue.name, city: venue.city, venueId: venue.venue_id, spotifyConnected: !!token } });
+    res.json({ loggedIn: true, venue: { name: venue.name, city: venue.city, venueId: venue.venue_id, isActive: venue.is_active, spotifyConnected: !!token } });
   } catch (e) {
     res.json({ loggedIn: false });
   }
 });
 
-// ── ADMIN: CREATE VENUE (you use this to set up new bars) ──
+// ── VENUE TOGGLE ON/OFF ──
+app.post('/api/venue/toggle', requireVenueAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'UPDATE venues SET is_active = NOT is_active WHERE venue_id = $1 RETURNING is_active',
+      [req.session.venueId]
+    );
+    res.json({ success: true, isActive: result.rows[0].is_active });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── VENUE ACTIVE STATUS (for patron app) ──
+app.get('/api/venue/active', async (req, res) => {
+  const venueId = req.query.venueId || 'default';
+  try {
+    const result = await pool.query('SELECT is_active FROM venues WHERE venue_id = $1', [venueId]);
+    if (!result.rows.length) return res.json({ isActive: true }); // default to active if venue not found
+    res.json({ isActive: result.rows[0].is_active });
+  } catch (e) {
+    res.json({ isActive: true });
+  }
+});
+
+// ── VENUE REVENUE ──
+app.get('/api/venue/revenue', requireVenueAuth, async (req, res) => {
+  const venueId = req.session.venueId;
+  try {
+    const today = await pool.query(
+      `SELECT COALESCE(SUM(amount_paid), 0) as total, COUNT(*) as count
+       FROM songs WHERE venue_id = $1 AND added_at >= NOW() - INTERVAL '1 day'`,
+      [venueId]
+    );
+    const week = await pool.query(
+      `SELECT COALESCE(SUM(amount_paid), 0) as total, COUNT(*) as count
+       FROM songs WHERE venue_id = $1 AND added_at >= NOW() - INTERVAL '7 days'`,
+      [venueId]
+    );
+    const month = await pool.query(
+      `SELECT COALESCE(SUM(amount_paid), 0) as total, COUNT(*) as count
+       FROM songs WHERE venue_id = $1 AND added_at >= NOW() - INTERVAL '30 days'`,
+      [venueId]
+    );
+    const allTime = await pool.query(
+      `SELECT COALESCE(SUM(amount_paid), 0) as total, COUNT(*) as count
+       FROM songs WHERE venue_id = $1`,
+      [venueId]
+    );
+    res.json({
+      today: { total: parseInt(today.rows[0].total), count: parseInt(today.rows[0].count) },
+      week: { total: parseInt(week.rows[0].total), count: parseInt(week.rows[0].count) },
+      month: { total: parseInt(month.rows[0].total), count: parseInt(month.rows[0].count) },
+      allTime: { total: parseInt(allTime.rows[0].total), count: parseInt(allTime.rows[0].count) }
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── VENUE INSIGHTS ──
+app.get('/api/venue/insights', requireVenueAuth, async (req, res) => {
+  const venueId = req.session.venueId;
+  try {
+    const topSongs = await pool.query(
+      `SELECT name, artist, image, COUNT(*) as play_count
+       FROM songs WHERE venue_id = $1
+       GROUP BY name, artist, image
+       ORDER BY play_count DESC LIMIT 10`,
+      [venueId]
+    );
+    const busyHours = await pool.query(
+      `SELECT EXTRACT(HOUR FROM added_at) as hour, COUNT(*) as count
+       FROM songs WHERE venue_id = $1
+       GROUP BY hour ORDER BY hour ASC`,
+      [venueId]
+    );
+    const totalPlayed = await pool.query(
+      `SELECT COUNT(*) as count FROM songs WHERE venue_id = $1 AND status = 'played'`,
+      [venueId]
+    );
+    res.json({
+      topSongs: topSongs.rows,
+      busyHours: busyHours.rows,
+      totalPlayed: parseInt(totalPlayed.rows[0].count)
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── ADMIN: CREATE VENUE ──
 app.post('/api/admin/create-venue', async (req, res) => {
   const { adminKey, name, city, venueId, email, password } = req.body;
   if (adminKey !== process.env.ADMIN_KEY) return res.status(403).json({ error: 'Unauthorized' });
@@ -218,8 +316,8 @@ app.post('/api/create-bundle-payment', async (req, res) => {
         price_data: {
           currency: 'eur',
           product_data: {
-            name: `Komos — ${bundle.label}`,
-            description: `${bundle.credits} song credit${bundle.credits > 1 ? 's' : ''} for the Komos jukebox`
+            name: `Zoros — ${bundle.label}`,
+            description: `${bundle.credits} song credit${bundle.credits > 1 ? 's' : ''} for the Zoros jukebox`
           },
           unit_amount: bundle.price
         },
@@ -268,9 +366,9 @@ app.post('/api/queue/use-credit', async (req, res) => {
     const addedToSpotify = await addToSpotifyQueue(venue_id, uri);
     const id = Date.now();
     await pool.query(`
-      INSERT INTO songs (id, track_id, name, artist, image, uri, venue_id, user_id, added_to_spotify)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    `, [id, track_id, track_name, artist, image, uri, venue_id, req.session.userId, addedToSpotify]);
+      INSERT INTO songs (id, track_id, name, artist, image, uri, venue_id, user_id, added_to_spotify, amount_paid)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `, [id, track_id, track_name, artist, image, uri, venue_id, req.session.userId, addedToSpotify, 99]);
     const credits = await pool.query('SELECT credits FROM users WHERE id = $1', [req.session.userId]);
     const position = await pool.query(
       "SELECT COUNT(*) FROM songs WHERE venue_id = $1 AND status = 'queued'",
@@ -406,7 +504,6 @@ async function autoClearPlayed() {
             }
           }
         }
-
       } catch (e) {
         // Silently continue
       }
@@ -595,9 +692,9 @@ app.post('/api/queue/add', async (req, res) => {
     const addedToSpotify = await addToSpotifyQueue(venue_id, uri);
     const id = Date.now();
     await pool.query(`
-      INSERT INTO songs (id, track_id, name, artist, image, uri, venue_id, added_to_spotify)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-    `, [id, track_id, track_name, artist, image, uri, venue_id, addedToSpotify]);
+      INSERT INTO songs (id, track_id, name, artist, image, uri, venue_id, added_to_spotify, amount_paid)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `, [id, track_id, track_name, artist, image, uri, venue_id, addedToSpotify, 99]);
     const position = await pool.query(
       "SELECT COUNT(*) FROM songs WHERE venue_id = $1 AND status = 'queued'",
       [venue_id]
@@ -654,4 +751,4 @@ app.get('/setup', (req, res) => res.sendFile(path.join(__dirname, 'public', 'set
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Komos running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Zoros running on port ${PORT}`));
