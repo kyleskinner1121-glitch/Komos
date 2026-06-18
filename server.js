@@ -1,4 +1,4 @@
-// v4
+// v5
 require('dotenv').config();
 const express = require('express');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -164,7 +164,9 @@ app.post('/api/venue/login', async (req, res) => {
     if (!match) return res.status(400).json({ error: 'Incorrect password' });
     req.session.venueId = venue.venue_id;
     req.session.venueName = venue.name;
-    res.json({ success: true, venue: { name: venue.name, city: venue.city, venueId: venue.venue_id, isActive: venue.is_active } });
+    // ── FIX: check spotify connection at login time ──
+    const spotifyToken = await getVenueToken(venue.venue_id);
+    res.json({ success: true, venue: { name: venue.name, city: venue.city, venueId: venue.venue_id, isActive: venue.is_active, spotifyConnected: !!spotifyToken } });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -531,7 +533,6 @@ app.get('/auth/spotify', (req, res) => {
   res.redirect(`https://accounts.spotify.com/authorize?${params}`);
 });
 
-// ── FIXED: restore venue session after Spotify OAuth ──
 app.get('/auth/spotify/callback', async (req, res) => {
   const { code, state: venueId } = req.query;
   if (!code) return res.redirect('/bar?error=no_code');
@@ -550,7 +551,7 @@ app.get('/auth/spotify/callback', async (req, res) => {
     if (!data.access_token) return res.redirect('/bar?error=no_token');
     await saveVenueToken(venueId, data.access_token, data.refresh_token, data.expires_in);
 
-    // Restore venue session so bar.html knows who is logged in
+    // Restore venue session
     const venueResult = await pool.query('SELECT name FROM venues WHERE venue_id = $1', [venueId]);
     if (venueResult.rows.length) {
       req.session.venueId = venueId;
