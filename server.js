@@ -66,6 +66,17 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS venues (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        city VARCHAR(255),
+        venue_id VARCHAR(255) UNIQUE NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
     console.log('Database initialized');
   } catch (e) {
     console.error('DB init error:', e);
@@ -131,6 +142,61 @@ app.get('/api/auth/me', async (req, res) => {
     res.json({ loggedIn: true, user: result.rows[0] });
   } catch (e) {
     res.json({ loggedIn: false });
+  }
+});
+
+// ── VENUE AUTH ROUTES ──
+app.post('/api/venue/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+  try {
+    const result = await pool.query('SELECT * FROM venues WHERE email = $1', [email.toLowerCase()]);
+    if (!result.rows.length) return res.status(400).json({ error: 'No venue found with that email' });
+    const venue = result.rows[0];
+    const match = await bcrypt.compare(password, venue.password_hash);
+    if (!match) return res.status(400).json({ error: 'Incorrect password' });
+    req.session.venueId = venue.venue_id;
+    req.session.venueName = venue.name;
+    res.json({ success: true, venue: { name: venue.name, city: venue.city, venueId: venue.venue_id } });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/venue/logout', (req, res) => {
+  req.session.venueId = null;
+  req.session.venueName = null;
+  res.json({ success: true });
+});
+
+app.get('/api/venue/me', async (req, res) => {
+  if (!req.session.venueId) return res.json({ loggedIn: false });
+  try {
+    const result = await pool.query('SELECT name, city, venue_id FROM venues WHERE venue_id = $1', [req.session.venueId]);
+    if (!result.rows.length) return res.json({ loggedIn: false });
+    const venue = result.rows[0];
+    const token = await getVenueToken(venue.venue_id);
+    res.json({ loggedIn: true, venue: { name: venue.name, city: venue.city, venueId: venue.venue_id, spotifyConnected: !!token } });
+  } catch (e) {
+    res.json({ loggedIn: false });
+  }
+});
+
+// ── ADMIN: CREATE VENUE (you use this to set up new bars) ──
+app.post('/api/admin/create-venue', async (req, res) => {
+  const { adminKey, name, city, venueId, email, password } = req.body;
+  if (adminKey !== process.env.ADMIN_KEY) return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const existing = await pool.query('SELECT id FROM venues WHERE email = $1 OR venue_id = $2', [email.toLowerCase(), venueId]);
+    if (existing.rows.length) return res.status(400).json({ error: 'Email or venue ID already exists' });
+    const hash = await bcrypt.hash(password, 10);
+    const result = await pool.query(
+      'INSERT INTO venues (name, city, venue_id, email, password_hash) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, city, venue_id',
+      [name, city, venueId, email.toLowerCase(), hash]
+    );
+    res.json({ success: true, venue: result.rows[0] });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -284,7 +350,6 @@ async function addToSpotifyQueue(venueId, uri) {
 }
 
 // ── SERVER-SIDE AUTO-CLEAR ──
-// Checks currently playing AND recently played to catch songs regardless of polling timing
 async function autoClearPlayed() {
   try {
     const venuesResult = await pool.query(
@@ -297,7 +362,6 @@ async function autoClearPlayed() {
         const token = await getVenueToken(venue_id);
         if (!token) continue;
 
-        // Get queued songs for this venue
         const queued = await pool.query(
           "SELECT uri, name FROM songs WHERE venue_id = $1 AND status = 'queued'",
           [venue_id]
@@ -306,7 +370,6 @@ async function autoClearPlayed() {
 
         const queuedUris = new Set(queued.rows.map(s => s.uri));
 
-        // ── CHECK 1: Currently playing ──
         const nowRes = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -323,7 +386,6 @@ async function autoClearPlayed() {
           }
         }
 
-        // ── CHECK 2: Recently played (catches songs polling missed) ──
         const recentRes = await fetch('https://api.spotify.com/v1/me/player/recently-played?limit=5', {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -346,7 +408,7 @@ async function autoClearPlayed() {
         }
 
       } catch (e) {
-        // Silently continue — don't let one venue error stop others
+        // Silently continue
       }
     }
   } catch (e) {
@@ -354,15 +416,14 @@ async function autoClearPlayed() {
   }
 }
 
-// Start the auto-clear loop after server starts
 setTimeout(() => {
   autoClearPlayed();
   setInterval(autoClearPlayed, 10000);
 }, 5000);
 
 app.get('/auth/spotify', (req, res) => {
-  const venueId = req.query.venueId || 'default';
-  const scopes = 'user-modify-playback-state user-read-playback-state';
+  const venueId = req.query.venueId || req.session.venueId || 'default';
+  const scopes = 'user-modify-playback-state user-read-playback-state user-read-recently-played';
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: process.env.SPOTIFY_CLIENT_ID,
@@ -375,7 +436,7 @@ app.get('/auth/spotify', (req, res) => {
 
 app.get('/auth/spotify/callback', async (req, res) => {
   const { code, state: venueId } = req.query;
-  if (!code) return res.redirect('/setup?error=no_code');
+  if (!code) return res.redirect('/bar?error=no_code');
   try {
     const creds = Buffer.from(`${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`).toString('base64');
     const r = await fetch('https://accounts.spotify.com/api/token', {
@@ -388,11 +449,11 @@ app.get('/auth/spotify/callback', async (req, res) => {
       })
     });
     const data = await r.json();
-    if (!data.access_token) return res.redirect('/setup?error=no_token');
+    if (!data.access_token) return res.redirect('/bar?error=no_token');
     await saveVenueToken(venueId, data.access_token, data.refresh_token, data.expires_in);
-    res.redirect(`/setup?success=true&venueId=${venueId}`);
+    res.redirect(`/bar?spotify=connected`);
   } catch (e) {
-    res.redirect('/setup?error=auth_failed');
+    res.redirect('/bar?error=auth_failed');
   }
 });
 
@@ -435,7 +496,7 @@ app.post('/api/queue/auto-clear', async (req, res) => {
 });
 
 app.get('/api/venue/status', async (req, res) => {
-  const venueId = req.query.venueId || 'default';
+  const venueId = req.query.venueId || req.session.venueId || 'default';
   const token = await getVenueToken(venueId);
   if (!token) return res.json({ connected: false });
   try {
