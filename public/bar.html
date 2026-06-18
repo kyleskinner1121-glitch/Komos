@@ -232,36 +232,37 @@
 
   .toggle-wrap { display: flex; align-items: center; gap: 10px; }
 
-  .toggle-label { font-size: 13px; font-weight: 500; color: var(--text-muted); }
+  .toggle-label { font-size: 13px; font-weight: 600; }
   .toggle-label.active { color: var(--green); }
   .toggle-label.inactive { color: var(--red); }
 
-  .toggle { position: relative; width: 48px; height: 26px; cursor: pointer; }
+  .toggle { position: relative; width: 56px; height: 30px; cursor: pointer; }
   .toggle input { opacity: 0; width: 0; height: 0; }
 
   .toggle-slider {
     position: absolute;
     inset: 0;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 26px;
+    background: var(--red);
+    border: 2px solid var(--red);
+    border-radius: 30px;
     transition: 0.2s;
   }
 
   .toggle-slider:before {
     content: '';
     position: absolute;
-    width: 18px;
-    height: 18px;
-    left: 3px;
-    top: 3px;
-    background: var(--text-muted);
+    width: 22px;
+    height: 22px;
+    left: 2px;
+    top: 2px;
+    background: white;
     border-radius: 50%;
     transition: 0.2s;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
   }
 
   .toggle input:checked + .toggle-slider { background: var(--green); border-color: var(--green); }
-  .toggle input:checked + .toggle-slider:before { transform: translateX(22px); background: white; }
+  .toggle input:checked + .toggle-slider:before { transform: translateX(26px); }
 
   .btn-logout {
     background: transparent;
@@ -768,7 +769,6 @@
   async function init() {
     const params = new URLSearchParams(window.location.search);
     const spotifyConnected = params.get('spotify') === 'connected';
-
     if (spotifyConnected) window.history.replaceState({}, '', '/bar');
 
     const res = await fetch('/api/venue/me');
@@ -778,10 +778,7 @@
 
     venueData = data.venue;
 
-    if (spotifyConnected) {
-      showDashboard();
-      return;
-    }
+    if (spotifyConnected) { showDashboard(); return; }
 
     if (!data.venue.spotifyConnected) {
       showSpotifyScreen();
@@ -1036,7 +1033,6 @@
     }).join('');
   }
 
-  // ── FIX: reload data when switching tabs ──
   function switchTab(name, el) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
