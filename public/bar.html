@@ -3,224 +3,1048 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Komos — Bar Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<title>Zoros — Venue Dashboard</title>
 <style>
-  :root { --black: #120E2E; --dark: #1A1245; --card: #231960; --border: #3D3284; --orange: #FF5500; --orange-light: #FF7733; --white: #FFFFFF; --muted: #9B93CC; --green: #27ae60; --red: #e74c3c; }
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+  :root {
+    --bg: #0f0d14;
+    --surface: #1a1625;
+    --surface2: #221e30;
+    --border: #2e2840;
+    --purple: #7c5cbf;
+    --purple-light: #9b7dd4;
+    --orange: #f97316;
+    --orange-dim: #c45d10;
+    --text: #f0ecfa;
+    --text-muted: #8b85a0;
+    --text-dim: #5c5570;
+    --green: #22c55e;
+    --red: #ef4444;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--black); color: var(--white); font-family: 'DM Sans', sans-serif; min-height: 100vh; }
-  .header { background: var(--dark); border-bottom: 2px solid var(--orange); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
-  .logo { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 4px; color: var(--orange); }
-  .header-right { display: flex; align-items: center; gap: 12px; }
-  .live-dot { width: 8px; height: 8px; background: var(--green); border-radius: 50%; display: inline-block; margin-right: 6px; animation: pulse 2s infinite; }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-  .status { font-size: 12px; color: var(--muted); display: flex; align-items: center; }
-  .auto-badge { background: rgba(29,185,84,0.15); border: 1px solid rgba(29,185,84,0.3); color: #1db954; font-size: 10px; padding: 3px 10px; border-radius: 20px; letter-spacing: 0.5px; }
-  .main { display: grid; grid-template-columns: 1fr 300px; gap: 0; min-height: calc(100vh - 62px); }
-  .queue-main { padding: 24px; border-right: 1px solid var(--border); }
-  .section-title { font-family: 'Bebas Neue', sans-serif; font-size: 16px; letter-spacing: 3px; color: var(--muted); margin-bottom: 16px; text-transform: uppercase; }
-  .now-playing { background: linear-gradient(135deg, rgba(29,185,84,0.15), rgba(29,185,84,0.05)); border: 1px solid rgba(29,185,84,0.4); border-radius: 12px; padding: 18px; margin-bottom: 20px; display: none; }
-  .now-playing.show { display: block; }
-  .now-playing .label { font-size: 10px; letter-spacing: 3px; color: #1db954; text-transform: uppercase; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
-  .now-playing .song { display: flex; align-items: center; gap: 14px; }
-  .now-playing img { width: 52px; height: 52px; border-radius: 6px; object-fit: cover; }
-  .now-playing .name { font-size: 16px; font-weight: 500; }
-  .now-playing .artist { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .progress-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 10px; }
-  .progress-fill { height: 3px; background: #1db954; border-radius: 2px; transition: width 1s linear; }
-  .queue-item { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 12px; transition: border-color 0.15s; }
-  .queue-item:hover { border-color: var(--orange); }
-  .q-num { font-family: 'Bebas Neue', sans-serif; font-size: 22px; color: var(--orange); width: 28px; text-align: center; flex-shrink: 0; }
-  .q-img { width: 46px; height: 46px; border-radius: 6px; object-fit: cover; background: var(--border); flex-shrink: 0; }
-  .q-info { flex: 1; min-width: 0; }
-  .q-name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .q-artist { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .q-actions { display: flex; gap: 8px; flex-shrink: 0; }
-  .btn-played { background: var(--green); color: white; border: none; border-radius: 6px; padding: 8px 14px; font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; cursor: pointer; transition: opacity 0.15s; }
-  .btn-played:hover { opacity: 0.85; }
-  .btn-skip { background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-family: 'DM Sans', sans-serif; font-size: 12px; cursor: pointer; transition: color 0.15s, border-color 0.15s; }
-  .btn-skip:hover { color: var(--red); border-color: var(--red); }
-  .empty-queue { text-align: center; padding: 60px 20px; color: var(--muted); }
-  .empty-queue .icon { font-size: 40px; margin-bottom: 12px; opacity: 0.3; }
-  .empty-queue p { font-size: 13px; font-weight: 300; line-height: 1.6; }
-  .sidebar { padding: 24px; background: var(--dark); }
-  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 10px; }
-  .stat-label { font-size: 10px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
-  .stat-value { font-family: 'Bebas Neue', sans-serif; font-size: 36px; color: var(--orange); letter-spacing: 1px; }
-  .stat-sub { font-size: 11px; color: var(--muted); font-weight: 300; margin-top: 2px; }
-  .played-list { margin-top: 20px; }
-  .played-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); opacity: 0.5; }
-  .played-item img { width: 32px; height: 32px; border-radius: 4px; object-fit: cover; background: var(--border); }
-  .played-item .name { font-size: 12px; font-weight: 500; }
-  .played-item .artist { font-size: 11px; color: var(--muted); }
-  @media (max-width: 768px) { .main { grid-template-columns: 1fr; } .sidebar { border-top: 1px solid var(--border); } }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  #login-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: radial-gradient(ellipse at 50% 0%, #2a1f4a 0%, var(--bg) 60%);
+  }
+
+  .login-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 48px 40px;
+    width: 100%;
+    max-width: 420px;
+  }
+
+  .login-logo {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+
+  .login-logo span { color: var(--orange); }
+
+  .login-subtitle {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-bottom: 36px;
+  }
+
+  .field { margin-bottom: 16px; }
+
+  .field label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .field input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    color: var(--text);
+    font-size: 15px;
+    font-family: 'Inter', sans-serif;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .field input:focus { border-color: var(--purple); }
+
+  .btn-primary {
+    width: 100%;
+    background: var(--orange);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 13px;
+    font-size: 15px;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: background 0.2s;
+  }
+
+  .btn-primary:hover { background: var(--orange-dim); }
+
+  .error-msg {
+    background: rgba(239,68,68,0.1);
+    border: 1px solid rgba(239,68,68,0.3);
+    color: #fca5a5;
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    font-size: 14px;
+    margin-top: 12px;
+    display: none;
+  }
+
+  #spotify-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: radial-gradient(ellipse at 50% 0%, #2a1f4a 0%, var(--bg) 60%);
+  }
+
+  .spotify-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 48px 40px;
+    width: 100%;
+    max-width: 420px;
+    text-align: center;
+  }
+
+  .spotify-icon {
+    width: 64px;
+    height: 64px;
+    background: #1db954;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 24px;
+    font-size: 32px;
+  }
+
+  .spotify-card h2 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+
+  .spotify-card p {
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 28px;
+  }
+
+  .btn-spotify {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: #1db954;
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 13px 24px;
+    font-size: 15px;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.2s;
+  }
+
+  .btn-spotify:hover { background: #17a349; }
+
+  .skip-link {
+    display: block;
+    margin-top: 16px;
+    color: var(--text-dim);
+    font-size: 13px;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+
+  #dashboard { display: none; min-height: 100vh; }
+
+  .topbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 60px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .topbar-left { display: flex; align-items: center; gap: 16px; }
+
+  .topbar-logo {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+  }
+
+  .topbar-logo span { color: var(--orange); }
+
+  .venue-name {
+    color: var(--text-muted);
+    font-size: 14px;
+    padding-left: 16px;
+    border-left: 1px solid var(--border);
+  }
+
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+
+  .toggle-wrap { display: flex; align-items: center; gap: 10px; }
+
+  .toggle-label { font-size: 13px; font-weight: 500; color: var(--text-muted); }
+  .toggle-label.active { color: var(--green); }
+  .toggle-label.inactive { color: var(--red); }
+
+  .toggle { position: relative; width: 48px; height: 26px; cursor: pointer; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+
+  .toggle-slider {
+    position: absolute;
+    inset: 0;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 26px;
+    transition: 0.2s;
+  }
+
+  .toggle-slider:before {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    left: 3px;
+    top: 3px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    transition: 0.2s;
+  }
+
+  .toggle input:checked + .toggle-slider { background: var(--green); border-color: var(--green); }
+  .toggle input:checked + .toggle-slider:before { transform: translateX(22px); background: white; }
+
+  .btn-logout {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: var(--radius-sm);
+    padding: 7px 14px;
+    font-size: 13px;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-logout:hover { border-color: var(--text-muted); color: var(--text); }
+
+  .tabs {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    gap: 4px;
+  }
+
+  .tab {
+    padding: 14px 18px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+  }
+
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--orange); border-bottom-color: var(--orange); }
+
+  .panel { display: none; padding: 28px 24px; max-width: 900px; margin: 0 auto; }
+  .panel.active { display: block; }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .section-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .badge {
+    background: var(--surface2);
+    color: var(--text-muted);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .badge.orange { background: rgba(249,115,22,0.15); color: var(--orange); }
+
+  .now-playing-bar {
+    background: linear-gradient(135deg, #1a1625, #221e30);
+    border: 1px solid var(--purple);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+
+  .np-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--purple-light);
+    white-space: nowrap;
+  }
+
+  .np-art { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+
+  .np-art-placeholder {
+    width: 44px;
+    height: 44px;
+    border-radius: 6px;
+    background: var(--surface2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+
+  .np-info { flex: 1; min-width: 0; }
+  .np-name { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .np-artist { color: var(--text-muted); font-size: 13px; }
+  .np-empty { color: var(--text-dim); font-size: 14px; }
+
+  .song-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .song-row {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .song-num { font-size: 12px; color: var(--text-dim); width: 20px; text-align: center; flex-shrink: 0; }
+  .song-art { width: 40px; height: 40px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+
+  .song-art-placeholder {
+    width: 40px;
+    height: 40px;
+    border-radius: 4px;
+    background: var(--surface2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  .song-info { flex: 1; min-width: 0; }
+  .song-name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .song-artist { font-size: 12px; color: var(--text-muted); }
+
+  .btn-remove {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+
+  .btn-remove:hover { border-color: var(--red); color: var(--red); }
+
+  .empty-state { text-align: center; padding: 48px 24px; color: var(--text-dim); font-size: 14px; }
+  .empty-state .empty-icon { font-size: 36px; margin-bottom: 12px; }
+
+  .divider { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+
+  .history-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .history-row:last-child { border-bottom: none; }
+
+  .history-art { width: 36px; height: 36px; border-radius: 4px; object-fit: cover; flex-shrink: 0; opacity: 0.7; }
+
+  .history-art-placeholder {
+    width: 36px;
+    height: 36px;
+    border-radius: 4px;
+    background: var(--surface2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+    opacity: 0.7;
+  }
+
+  .history-info { flex: 1; min-width: 0; }
+  .history-name { font-size: 13px; font-weight: 500; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .history-artist { font-size: 12px; color: var(--text-dim); }
+  .history-time { font-size: 11px; color: var(--text-dim); flex-shrink: 0; }
+
+  .revenue-tabs { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+
+  .rev-tab {
+    padding: 8px 18px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    background: transparent;
+    font-family: 'Inter', sans-serif;
+    transition: all 0.15s;
+  }
+
+  .rev-tab.active { background: var(--orange); border-color: var(--orange); color: white; }
+
+  .revenue-hero {
+    background: linear-gradient(135deg, var(--surface), var(--surface2));
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px;
+    text-align: center;
+    margin-bottom: 20px;
+  }
+
+  .revenue-amount {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 52px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+
+  .revenue-amount .eur { font-size: 28px; color: var(--orange); }
+  .revenue-period { font-size: 14px; color: var(--text-muted); }
+
+  .revenue-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+
+  .stat-label {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+
+  .stat-value { font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 700; }
+  .stat-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+  .insights-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+
+  @media (max-width: 600px) {
+    .insights-grid { grid-template-columns: 1fr; }
+    .revenue-stats { grid-template-columns: 1fr; }
+    .topbar { flex-wrap: wrap; height: auto; padding: 12px; gap: 8px; }
+  }
+
+  .insight-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+
+  .insight-card .section-title { margin-bottom: 16px; }
+
+  .top-song-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .top-song-row:last-child { border-bottom: none; }
+
+  .top-song-rank { font-size: 12px; font-weight: 700; color: var(--text-dim); width: 18px; flex-shrink: 0; }
+  .top-song-art { width: 32px; height: 32px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+
+  .top-song-art-placeholder {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    background: var(--surface2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .top-song-info { flex: 1; min-width: 0; }
+  .top-song-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .top-song-artist { font-size: 11px; color: var(--text-muted); }
+  .top-song-count { font-size: 12px; font-weight: 600; color: var(--orange); flex-shrink: 0; }
+
+  .hour-chart { display: flex; align-items: flex-end; gap: 3px; height: 80px; margin-top: 8px; }
+
+  .hour-bar-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+    justify-content: flex-end;
+  }
+
+  .hour-bar {
+    width: 100%;
+    background: var(--purple);
+    border-radius: 2px 2px 0 0;
+    min-height: 3px;
+    transition: background 0.2s;
+  }
+
+  .hour-bar:hover { background: var(--purple-light); }
+
+  .total-played-card {
+    background: linear-gradient(135deg, rgba(124,92,191,0.15), rgba(124,92,191,0.05));
+    border: 1px solid rgba(124,92,191,0.3);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  .total-played-icon { font-size: 32px; }
+
+  .total-played-num {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 36px;
+    font-weight: 700;
+    color: var(--purple-light);
+    line-height: 1;
+  }
+
+  .total-played-label { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+
+  .spotify-status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted); }
+
+  .spotify-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); flex-shrink: 0; }
+  .spotify-dot.connected { background: #1db954; }
+
+  .btn-reconnect {
+    background: transparent;
+    border: none;
+    color: var(--purple-light);
+    font-size: 13px;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+  }
+
+  .loading { text-align: center; padding: 32px; color: var(--text-dim); font-size: 14px; }
 </style>
 </head>
 <body>
 
-<div class="header">
-  <div>
-    <span class="logo">Komos</span>
-    <span style="font-family:'DM Sans',sans-serif;font-size:12px;color:var(--muted);margin-left:10px;letter-spacing:2px;text-transform:uppercase">Bar Dashboard</span>
-  </div>
-  <div class="header-right">
-    <span class="auto-badge">⚡ Auto-sync</span>
-    <div class="status"><span class="live-dot"></span> Live</div>
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">Zoros<span>.</span></div>
+    <div class="login-subtitle">Venue dashboard — staff access only</div>
+    <div class="field">
+      <label>Email</label>
+      <input type="email" id="login-email" placeholder="venue@email.com" autocomplete="email">
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn-primary" onclick="doLogin()">Sign in</button>
+    <div class="error-msg" id="login-error"></div>
   </div>
 </div>
 
-<div class="main">
-  <div class="queue-main">
-    <p class="section-title">Song Queue</p>
+<!-- SPOTIFY CONNECT -->
+<div id="spotify-screen" style="display:none;">
+  <div class="spotify-card">
+    <div class="spotify-icon">🎵</div>
+    <h2>Connect Spotify</h2>
+    <p>Link your venue's Spotify account so patron requests play directly through your speakers. You only need to do this once.</p>
+    <a id="spotify-connect-btn" class="btn-spotify" href="#">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+      Connect with Spotify
+    </a>
+    <span class="skip-link" onclick="showDashboard()">Skip for now — I'll connect later</span>
+  </div>
+</div>
 
-    <div class="now-playing" id="nowPlaying">
-      <div class="label"><span class="live-dot"></span> Now playing on Spotify</div>
-      <div class="song">
-        <img id="npImg" src="" alt="">
-        <div style="flex:1">
-          <div class="name" id="npName"></div>
-          <div class="artist" id="npArtist"></div>
-          <div class="progress-bar">
-            <div class="progress-fill" id="progressFill" style="width:0%"></div>
-          </div>
-        </div>
+<!-- DASHBOARD -->
+<div id="dashboard">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-logo">Zoros<span>.</span></div>
+      <div class="venue-name" id="topbar-venue-name">Loading...</div>
+    </div>
+    <div class="topbar-right">
+      <div class="toggle-wrap">
+        <span class="toggle-label" id="toggle-label">Loading...</span>
+        <label class="toggle">
+          <input type="checkbox" id="active-toggle" onchange="toggleActive()">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <button class="btn-logout" onclick="doLogout()">Sign out</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('queue', this)">Queue</div>
+    <div class="tab" onclick="switchTab('revenue', this)">Revenue</div>
+    <div class="tab" onclick="switchTab('insights', this)">Insights</div>
+  </div>
+
+  <!-- QUEUE TAB -->
+  <div class="panel active" id="panel-queue">
+    <div class="now-playing-bar">
+      <div class="np-label">Now playing</div>
+      <div id="np-art-wrap" class="np-art-placeholder">🎵</div>
+      <div class="np-info">
+        <div class="np-empty" id="np-text">Nothing playing</div>
+      </div>
+      <div class="spotify-status">
+        <div class="spotify-dot" id="spotify-dot"></div>
+        <span id="spotify-status-text">—</span>
+        <button class="btn-reconnect" id="btn-reconnect" onclick="connectSpotify()" style="display:none;">Reconnect</button>
       </div>
     </div>
 
-    <div id="queueList">
-      <div class="empty-queue">
-        <div class="icon">🎵</div>
-        <p>No songs in queue yet.<br>Share the QR code with patrons.</p>
+    <div class="section-header">
+      <div class="section-title">Up next</div>
+      <div class="badge orange" id="queue-count-badge">0 songs</div>
+    </div>
+    <div class="song-list" id="queue-list">
+      <div class="loading">Loading queue...</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="section-header">
+      <div class="section-title">Recently played</div>
+    </div>
+    <div id="history-list">
+      <div class="loading">Loading history...</div>
+    </div>
+  </div>
+
+  <!-- REVENUE TAB -->
+  <div class="panel" id="panel-revenue">
+    <div class="revenue-tabs">
+      <button class="rev-tab active" onclick="switchRevPeriod('today', this)">Today</button>
+      <button class="rev-tab" onclick="switchRevPeriod('week', this)">This week</button>
+      <button class="rev-tab" onclick="switchRevPeriod('month', this)">This month</button>
+      <button class="rev-tab" onclick="switchRevPeriod('allTime', this)">All time</button>
+    </div>
+    <div class="revenue-hero">
+      <div class="revenue-amount"><span class="eur">€</span><span id="rev-amount">0.00</span></div>
+      <div class="revenue-period" id="rev-period-label">Today</div>
+    </div>
+    <div class="revenue-stats">
+      <div class="stat-card">
+        <div class="stat-label">Songs played</div>
+        <div class="stat-value" id="rev-count">0</div>
+        <div class="stat-sub">in this period</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg per song</div>
+        <div class="stat-value" id="rev-avg">€0.00</div>
+        <div class="stat-sub">revenue per request</div>
       </div>
     </div>
   </div>
 
-  <div class="sidebar">
-    <p class="section-title">Tonight</p>
-
-    <div class="stat-card">
-      <div class="stat-label">Songs played</div>
-      <div class="stat-value" id="statPlayed">0</div>
-      <div class="stat-sub">this session</div>
+  <!-- INSIGHTS TAB -->
+  <div class="panel" id="panel-insights">
+    <div class="total-played-card">
+      <div class="total-played-icon">🎵</div>
+      <div>
+        <div class="total-played-num" id="total-played-num">—</div>
+        <div class="total-played-label">total songs played at your venue</div>
+      </div>
     </div>
 
-    <div class="stat-card">
-      <div class="stat-label">Revenue</div>
-      <div class="stat-value" id="statRevenue">€0</div>
-      <div class="stat-sub">at €0.99 per song</div>
+    <div class="insights-grid">
+      <div class="insight-card">
+        <div class="section-title">Most requested</div>
+        <div id="top-songs-list"><div class="loading">Loading...</div></div>
+      </div>
+      <div class="insight-card">
+        <div class="section-title">Busiest hours</div>
+        <div class="hour-chart" id="hour-chart"></div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;">
+          <span style="font-size:10px;color:var(--text-dim)">12am</span>
+          <span style="font-size:10px;color:var(--text-dim)">12pm</span>
+          <span style="font-size:10px;color:var(--text-dim)">11pm</span>
+        </div>
+      </div>
     </div>
-
-    <div class="stat-card">
-      <div class="stat-label">In queue</div>
-      <div class="stat-value" id="statQueue">0</div>
-      <div class="stat-sub">songs pending</div>
-    </div>
-
-    <div class="played-list" id="playedList"></div>
   </div>
 </div>
 
 <script>
-const VENUE_ID = new URLSearchParams(window.location.search).get('venue') || 'default';
-let lastNowPlayingUri = null;
+  let venueData = null;
+  let revenueData = null;
+  let currentRevPeriod = 'today';
 
-async function loadQueue() {
-  try {
-    const r = await fetch(`/api/queue?venueId=${VENUE_ID}`);
-    const data = await r.json();
-    renderQueue(data.queue || []);
-    renderStats(data.queue || [], data.played || []);
-    renderPlayed(data.played || []);
-  } catch(e) {}
-}
+  async function init() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('spotify') === 'connected') window.history.replaceState({}, '', '/bar');
 
-async function checkNowPlaying() {
-  try {
-    const r = await fetch(`/api/now-playing?venueId=${VENUE_ID}`);
-    const data = await r.json();
-    if (data.playing) {
-      document.getElementById('npImg').src = data.image || '';
-      document.getElementById('npName').textContent = data.name;
-      document.getElementById('npArtist').textContent = data.artist;
-      document.getElementById('nowPlaying').classList.add('show');
-      const progress = (data.progress_ms / data.duration_ms) * 100;
-      document.getElementById('progressFill').style.width = `${progress}%`;
-      if (data.uri && data.uri !== lastNowPlayingUri) {
-        lastNowPlayingUri = data.uri;
-        await fetch('/api/queue/auto-clear', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ venueId: VENUE_ID, uri: data.uri })
-        });
-        await loadQueue();
-      }
+    const res = await fetch('/api/venue/me');
+    const data = await res.json();
+
+    if (!data.loggedIn) { showLogin(); return; }
+
+    venueData = data.venue;
+    if (!data.venue.spotifyConnected) {
+      showSpotifyScreen();
     } else {
-      document.getElementById('nowPlaying').classList.remove('show');
+      showDashboard();
     }
-  } catch(e) {}
-}
-
-function renderQueue(queue) {
-  const el = document.getElementById('queueList');
-  if (!queue.length) {
-    el.innerHTML = `<div class="empty-queue"><div class="icon">🎵</div><p>No songs in queue yet.<br>Share the QR code with patrons.</p></div>`;
-    return;
   }
-  el.innerHTML = queue.map((s, i) => `
-    <div class="queue-item" id="item-${s.id}">
-      <div class="q-num">${i + 1}</div>
-      <img class="q-img" src="${s.image || ''}" onerror="this.style.background='#3D3284'" alt="">
-      <div class="q-info">
-        <div class="q-name">${s.name}</div>
-        <div class="q-artist">${s.artist}</div>
-      </div>
-      <div class="q-actions">
-        <button class="btn-played" onclick="markPlayed(${s.id})">✓ Played</button>
-        <button class="btn-skip" onclick="skipSong(${s.id})">Skip</button>
-      </div>
-    </div>
-  `).join('');
-}
 
-function renderStats(queue, played) {
-  document.getElementById('statPlayed').textContent = played.length;
-  document.getElementById('statRevenue').textContent = `€${(played.length * 0.99).toFixed(2)}`;
-  document.getElementById('statQueue').textContent = queue.length;
-}
+  function showLogin() {
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('spotify-screen').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'none';
+  }
 
-function renderPlayed(played) {
-  if (!played.length) return;
-  document.getElementById('playedList').innerHTML =
-    `<p style="font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-bottom:10px">Recently played</p>` +
-    [...played].reverse().map(s => `
-      <div class="played-item">
-        <img src="${s.image || ''}" onerror="this.style.background='#3D3284'" alt="">
-        <div>
-          <div class="name">${s.name}</div>
-          <div class="artist">${s.artist}</div>
+  function showSpotifyScreen() {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('spotify-screen').style.display = 'flex';
+    document.getElementById('dashboard').style.display = 'none';
+    document.getElementById('spotify-connect-btn').href = `/auth/spotify?venueId=${venueData.venueId}`;
+  }
+
+  function showDashboard() {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('spotify-screen').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+
+    if (venueData) {
+      document.getElementById('topbar-venue-name').textContent = venueData.name + (venueData.city ? `, ${venueData.city}` : '');
+      setToggle(venueData.isActive);
+    }
+
+    loadQueue();
+    loadRevenue();
+    loadInsights();
+    loadNowPlaying();
+    setInterval(loadQueue, 10000);
+    setInterval(loadNowPlaying, 5000);
+  }
+
+  async function doLogin() {
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    const errEl = document.getElementById('login-error');
+    errEl.style.display = 'none';
+
+    if (!email || !password) {
+      errEl.textContent = 'Please enter your email and password.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    const res = await fetch('/api/venue/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+
+    if (!data.success) {
+      errEl.textContent = data.error || 'Login failed.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    venueData = data.venue;
+    if (!data.venue.spotifyConnected) {
+      showSpotifyScreen();
+    } else {
+      showDashboard();
+    }
+  }
+
+  document.getElementById('login-password').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+
+  async function doLogout() {
+    await fetch('/api/venue/logout', { method: 'POST' });
+    venueData = null;
+    showLogin();
+  }
+
+  function setToggle(isActive) {
+    const toggle = document.getElementById('active-toggle');
+    const label = document.getElementById('toggle-label');
+    toggle.checked = isActive;
+    label.textContent = isActive ? 'Open' : 'Closed';
+    label.className = 'toggle-label ' + (isActive ? 'active' : 'inactive');
+  }
+
+  async function toggleActive() {
+    const res = await fetch('/api/venue/toggle', { method: 'POST' });
+    const data = await res.json();
+    if (data.success) { venueData.isActive = data.isActive; setToggle(data.isActive); }
+  }
+
+  async function loadQueue() {
+    if (!venueData) return;
+    const res = await fetch(`/api/queue?venueId=${venueData.venueId}`);
+    const data = await res.json();
+
+    const badge = document.getElementById('queue-count-badge');
+    badge.textContent = `${data.queue.length} song${data.queue.length !== 1 ? 's' : ''}`;
+
+    const queueEl = document.getElementById('queue-list');
+    if (data.queue.length === 0) {
+      queueEl.innerHTML = `<div class="empty-state"><div class="empty-icon">🎶</div>Queue is empty</div>`;
+    } else {
+      queueEl.innerHTML = data.queue.map((s, i) => `
+        <div class="song-row">
+          <div class="song-num">${i + 1}</div>
+          ${s.image ? `<img class="song-art" src="${s.image}" alt="">` : `<div class="song-art-placeholder">🎵</div>`}
+          <div class="song-info">
+            <div class="song-name">${esc(s.name)}</div>
+            <div class="song-artist">${esc(s.artist)}</div>
+          </div>
+          <button class="btn-remove" onclick="removeSong(${s.id})">Remove</button>
         </div>
-      </div>
-    `).join('');
-}
+      `).join('');
+    }
 
-async function markPlayed(id) {
-  const el = document.getElementById(`item-${id}`);
-  if (el) { el.style.opacity = '0.4'; el.style.pointerEvents = 'none'; }
-  await fetch(`/api/queue/played/${id}`, { method: 'POST' });
-  loadQueue();
-}
+    const histEl = document.getElementById('history-list');
+    if (data.played.length === 0) {
+      histEl.innerHTML = `<div class="empty-state" style="padding:24px 0"><div class="empty-icon">📭</div>No songs played yet</div>`;
+    } else {
+      histEl.innerHTML = data.played.map(s => `
+        <div class="history-row">
+          ${s.image ? `<img class="history-art" src="${s.image}" alt="">` : `<div class="history-art-placeholder">🎵</div>`}
+          <div class="history-info">
+            <div class="history-name">${esc(s.name)}</div>
+            <div class="history-artist">${esc(s.artist)}</div>
+          </div>
+          <div class="history-time">${timeAgo(s.playedAt)}</div>
+        </div>
+      `).join('');
+    }
+  }
 
-async function skipSong(id) {
-  const el = document.getElementById(`item-${id}`);
-  if (el) { el.style.opacity = '0.4'; el.style.pointerEvents = 'none'; }
-  await fetch(`/api/queue/skip/${id}`, { method: 'POST' });
-  loadQueue();
-}
+  async function removeSong(id) {
+    await fetch(`/api/queue/skip/${id}`, { method: 'POST' });
+    loadQueue();
+  }
 
-loadQueue();
-checkNowPlaying();
-setInterval(loadQueue, 5000);
-setInterval(checkNowPlaying, 3000);
+  async function loadNowPlaying() {
+    if (!venueData) return;
+
+    const statusRes = await fetch(`/api/venue/status?venueId=${venueData.venueId}`);
+    const status = await statusRes.json();
+    const dot = document.getElementById('spotify-dot');
+    const statusText = document.getElementById('spotify-status-text');
+    const reconnectBtn = document.getElementById('btn-reconnect');
+
+    if (status.connected) {
+      dot.className = 'spotify-dot connected';
+      statusText.textContent = status.device || 'Spotify connected';
+      reconnectBtn.style.display = 'none';
+    } else {
+      dot.className = 'spotify-dot';
+      statusText.textContent = 'Not connected';
+      reconnectBtn.style.display = 'inline';
+    }
+
+    const res = await fetch(`/api/now-playing?venueId=${venueData.venueId}`);
+    const data = await res.json();
+    const artWrap = document.getElementById('np-art-wrap');
+    const npText = document.getElementById('np-text');
+
+    if (data.playing) {
+      if (data.image) {
+        artWrap.outerHTML = `<img class="np-art" id="np-art-wrap" src="${data.image}" alt="">`;
+      }
+      npText.className = 'np-name';
+      npText.innerHTML = `${esc(data.name)}<br><span style="font-size:13px;font-weight:400;color:var(--text-muted)">${esc(data.artist)}</span>`;
+    } else {
+      npText.className = 'np-empty';
+      npText.textContent = 'Nothing playing';
+    }
+  }
+
+  function connectSpotify() {
+    if (venueData) window.location.href = `/auth/spotify?venueId=${venueData.venueId}`;
+  }
+
+  async function loadRevenue() {
+    if (!venueData) return;
+    const res = await fetch('/api/venue/revenue');
+    const data = await res.json();
+    revenueData = data;
+    renderRevenue();
+  }
+
+  function switchRevPeriod(period, el) {
+    currentRevPeriod = period;
+    document.querySelectorAll('.rev-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    renderRevenue();
+  }
+
+  function renderRevenue() {
+    if (!revenueData) return;
+    const d = revenueData[currentRevPeriod];
+    const labels = { today: 'Today', week: 'This week', month: 'This month', allTime: 'All time' };
+    const avg = d.count > 0 ? (d.total / d.count / 100).toFixed(2) : '0.00';
+
+    document.getElementById('rev-amount').textContent = (d.total / 100).toFixed(2);
+    document.getElementById('rev-period-label').textContent = labels[currentRevPeriod];
+    document.getElementById('rev-count').textContent = d.count;
+    document.getElementById('rev-avg').textContent = `€${avg}`;
+  }
+
+  async function loadInsights() {
+    if (!venueData) return;
+    const res = await fetch('/api/venue/insights');
+    const data = await res.json();
+
+    document.getElementById('total-played-num').textContent = data.totalPlayed.toLocaleString();
+
+    const topEl = document.getElementById('top-songs-list');
+    if (data.topSongs.length === 0) {
+      topEl.innerHTML = `<div style="color:var(--text-dim);font-size:13px;padding:12px 0">No songs yet</div>`;
+    } else {
+      topEl.innerHTML = data.topSongs.map((s, i) => `
+        <div class="top-song-row">
+          <div class="top-song-rank">${i + 1}</div>
+          ${s.image ? `<img class="top-song-art" src="${s.image}" alt="">` : `<div class="top-song-art-placeholder">🎵</div>`}
+          <div class="top-song-info">
+            <div class="top-song-name">${esc(s.name)}</div>
+            <div class="top-song-artist">${esc(s.artist)}</div>
+          </div>
+          <div class="top-song-count">${s.play_count}×</div>
+        </div>
+      `).join('');
+    }
+
+    const hourEl = document.getElementById('hour-chart');
+    const hourMap = {};
+    data.busyHours.forEach(h => { hourMap[parseInt(h.hour)] = parseInt(h.count); });
+    const maxCount = Math.max(...Object.values(hourMap), 1);
+
+    hourEl.innerHTML = Array.from({ length: 24 }, (_, i) => {
+      const count = hourMap[i] || 0;
+      const height = Math.max((count / maxCount) * 72, count > 0 ? 6 : 3);
+      return `
+        <div class="hour-bar-wrap" title="${i < 12 ? i || 12 : i - 12}${i < 12 ? 'am' : 'pm'}: ${count} songs">
+          <div class="hour-bar" style="height:${height}px"></div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function switchTab(name, el) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById(`panel-${name}`).classList.add('active');
+  }
+
+  function esc(str) {
+    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function timeAgo(ts) {
+    if (!ts) return '';
+    const diff = Math.floor((Date.now() - new Date(ts)) / 1000);
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+    return `${Math.floor(diff/86400)}d ago`;
+  }
+
+  init();
 </script>
 </body>
 </html>
