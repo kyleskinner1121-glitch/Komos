@@ -768,11 +768,8 @@
   async function init() {
     const params = new URLSearchParams(window.location.search);
     const spotifyConnected = params.get('spotify') === 'connected';
-    const venueIdFromUrl = params.get('venueId');
 
-    if (spotifyConnected || venueIdFromUrl) {
-      window.history.replaceState({}, '', '/bar');
-    }
+    if (spotifyConnected) window.history.replaceState({}, '', '/bar');
 
     const res = await fetch('/api/venue/me');
     const data = await res.json();
@@ -781,7 +778,6 @@
 
     venueData = data.venue;
 
-    // If spotify just connected, go straight to dashboard
     if (spotifyConnected) {
       showDashboard();
       return;
@@ -881,7 +877,6 @@
     if (data.success) { venueData.isActive = data.isActive; setToggle(data.isActive); }
   }
 
-  // KEY FIX: always navigate directly using the venueId we have in memory
   function connectSpotify() {
     if (venueData && venueData.venueId) {
       window.location.href = `/auth/spotify?venueId=${venueData.venueId}`;
@@ -1041,11 +1036,14 @@
     }).join('');
   }
 
+  // ── FIX: reload data when switching tabs ──
   function switchTab(name, el) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     el.classList.add('active');
     document.getElementById(`panel-${name}`).classList.add('active');
+    if (name === 'revenue') loadRevenue();
+    if (name === 'insights') loadInsights();
   }
 
   function esc(str) {
