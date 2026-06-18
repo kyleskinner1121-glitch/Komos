@@ -1,4 +1,4 @@
-// v3
+// v4
 require('dotenv').config();
 const express = require('express');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -26,7 +26,7 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'komos-secret',
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 30 * 24 * 60 * 60 * 1000 }
+  cookie: { maxAge: 30 * 24 * 60 * 60 * 1000, sameSite: 'lax' }
 }));
 
 async function initDB() {
@@ -207,7 +207,7 @@ app.get('/api/venue/active', async (req, res) => {
   const venueId = req.query.venueId || 'default';
   try {
     const result = await pool.query('SELECT is_active FROM venues WHERE venue_id = $1', [venueId]);
-    if (!result.rows.length) return res.json({ isActive: true }); // default to active if venue not found
+    if (!result.rows.length) return res.json({ isActive: true });
     res.json({ isActive: result.rows[0].is_active });
   } catch (e) {
     res.json({ isActive: true });
@@ -531,6 +531,7 @@ app.get('/auth/spotify', (req, res) => {
   res.redirect(`https://accounts.spotify.com/authorize?${params}`);
 });
 
+// ── FIXED: restore venue session after Spotify OAuth ──
 app.get('/auth/spotify/callback', async (req, res) => {
   const { code, state: venueId } = req.query;
   if (!code) return res.redirect('/bar?error=no_code');
@@ -548,6 +549,14 @@ app.get('/auth/spotify/callback', async (req, res) => {
     const data = await r.json();
     if (!data.access_token) return res.redirect('/bar?error=no_token');
     await saveVenueToken(venueId, data.access_token, data.refresh_token, data.expires_in);
+
+    // Restore venue session so bar.html knows who is logged in
+    const venueResult = await pool.query('SELECT name FROM venues WHERE venue_id = $1', [venueId]);
+    if (venueResult.rows.length) {
+      req.session.venueId = venueId;
+      req.session.venueName = venueResult.rows[0].name;
+    }
+
     res.redirect(`/bar?spotify=connected`);
   } catch (e) {
     res.redirect('/bar?error=auth_failed');
