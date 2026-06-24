@@ -232,10 +232,6 @@
 
   .toggle-wrap { display: flex; align-items: center; gap: 10px; }
 
-  .toggle-label { font-size: 13px; font-weight: 600; }
-  .toggle-label.active { color: var(--green); }
-  .toggle-label.inactive { color: var(--red); }
-
   .toggle { position: relative; width: 56px; height: 30px; cursor: pointer; }
   .toggle input { opacity: 0; width: 0; height: 0; }
 
@@ -277,6 +273,21 @@
   }
 
   .btn-logout:hover { border-color: var(--text-muted); color: var(--text); }
+
+  .btn-lang {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: var(--radius-sm);
+    padding: 7px 12px;
+    font-size: 15px;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    transition: all 0.2s;
+    line-height: 1;
+  }
+
+  .btn-lang:hover { border-color: var(--text-muted); color: var(--text); }
 
   .tabs {
     background: var(--surface);
@@ -822,16 +833,16 @@
 <div id="login-screen">
   <div class="login-card">
     <div class="login-logo">Zoros<span>.</span></div>
-    <div class="login-subtitle">Venue dashboard — staff access only</div>
+    <div class="login-subtitle" data-en="Venue dashboard — staff access only" data-es="Panel del local — solo personal autorizado">Venue dashboard — staff access only</div>
     <div class="field">
-      <label>Email</label>
+      <label data-en="Email" data-es="Correo">Email</label>
       <input type="email" id="login-email" placeholder="venue@email.com" autocomplete="email">
     </div>
     <div class="field">
-      <label>Password</label>
+      <label data-en="Password" data-es="Contraseña">Password</label>
       <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
     </div>
-    <button class="btn-primary" onclick="doLogin()">Sign in</button>
+    <button class="btn-primary" onclick="doLogin()" data-en="Sign in" data-es="Iniciar sesión">Sign in</button>
     <div class="error-msg" id="login-error"></div>
   </div>
 </div>
@@ -840,13 +851,13 @@
 <div id="spotify-screen" style="display:none;">
   <div class="spotify-card">
     <div class="spotify-icon">🎵</div>
-    <h2>Connect Spotify</h2>
-    <p>Link your venue's Spotify account so patron requests play directly through your speakers. You only need to do this once.</p>
+    <h2 data-en="Connect Spotify" data-es="Conectar Spotify">Connect Spotify</h2>
+    <p data-en="Link your venue's Spotify account so patron requests play directly through your speakers. You only need to do this once." data-es="Vincula la cuenta de Spotify de tu local para que las canciones solicitadas suenen directamente en tus altavoces. Solo necesitas hacerlo una vez.">Link your venue's Spotify account so patron requests play directly through your speakers. You only need to do this once.</p>
     <button class="btn-spotify" onclick="connectSpotify()">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
-      Connect with Spotify
+      <span data-en="Connect with Spotify" data-es="Conectar con Spotify">Connect with Spotify</span>
     </button>
-    <span class="skip-link" onclick="showDashboard()">Skip for now — I'll connect later</span>
+    <span class="skip-link" onclick="showDashboard()" data-en="Skip for now — I'll connect later" data-es="Omitir por ahora — conectaré más tarde">Skip for now — I'll connect later</span>
   </div>
 </div>
 
@@ -858,64 +869,64 @@
       <div class="venue-name" id="topbar-venue-name">Loading...</div>
     </div>
     <div class="topbar-right">
+      <button class="btn-lang" onclick="toggleLang()" id="lang-btn" title="Switch language">🌐</button>
       <div class="toggle-wrap">
-        <span class="toggle-label" id="toggle-label">Loading...</span>
         <label class="toggle">
           <input type="checkbox" id="active-toggle" onchange="toggleActive()">
           <span class="toggle-slider"></span>
         </label>
       </div>
-      <button class="btn-logout" onclick="doLogout()">Sign out</button>
+      <button class="btn-logout" onclick="doLogout()" data-en="Sign out" data-es="Cerrar sesión">Sign out</button>
     </div>
   </div>
 
   <div class="tabs">
-    <div class="tab active" onclick="switchTab('queue', this)">Queue</div>
-    <div class="tab" onclick="switchTab('revenue', this)">Revenue</div>
-    <div class="tab" onclick="switchTab('insights', this)">Insights</div>
-    <div class="tab" onclick="switchTab('settings', this)">Settings</div>
+    <div class="tab active" onclick="switchTab('queue', this)" data-en="Queue" data-es="Cola">Queue</div>
+    <div class="tab" onclick="switchTab('revenue', this)" data-en="Revenue" data-es="Ingresos">Revenue</div>
+    <div class="tab" onclick="switchTab('insights', this)" data-en="Insights" data-es="Estadísticas">Insights</div>
+    <div class="tab" onclick="switchTab('settings', this)" data-en="Settings" data-es="Ajustes">Settings</div>
   </div>
 
   <!-- QUEUE TAB -->
   <div class="panel active" id="panel-queue">
     <div class="now-playing-bar">
-      <div class="np-label">Now playing</div>
+      <div class="np-label" data-en="Now playing" data-es="Sonando ahora">Now playing</div>
       <div id="np-art-wrap" class="np-art-placeholder">🎵</div>
       <div class="np-info">
-        <div class="np-empty" id="np-text">Nothing playing</div>
+        <div class="np-empty" id="np-text" data-en="Nothing playing" data-es="Nada sonando">Nothing playing</div>
       </div>
       <div class="spotify-status">
         <div class="spotify-dot" id="spotify-dot"></div>
         <span id="spotify-status-text">—</span>
-        <button class="btn-reconnect" id="btn-reconnect" onclick="connectSpotify()" style="display:none;">Reconnect</button>
+        <button class="btn-reconnect" id="btn-reconnect" onclick="connectSpotify()" style="display:none;" data-en="Reconnect" data-es="Reconectar">Reconnect</button>
       </div>
     </div>
 
     <div class="section-header">
-      <div class="section-title">Up next</div>
+      <div class="section-title" data-en="Up next" data-es="A continuación">Up next</div>
       <div class="badge orange" id="queue-count-badge">0 songs</div>
     </div>
     <div class="song-list" id="queue-list">
-      <div class="loading">Loading queue...</div>
+      <div class="loading" data-en="Loading queue..." data-es="Cargando cola...">Loading queue...</div>
     </div>
 
     <hr class="divider">
 
     <div class="section-header">
-      <div class="section-title">Recently played</div>
+      <div class="section-title" data-en="Recently played" data-es="Reproducido recientemente">Recently played</div>
     </div>
     <div id="history-list">
-      <div class="loading">Loading history...</div>
+      <div class="loading" data-en="Loading history..." data-es="Cargando historial...">Loading history...</div>
     </div>
   </div>
 
   <!-- REVENUE TAB -->
   <div class="panel" id="panel-revenue">
     <div class="revenue-tabs">
-      <button class="rev-tab active" onclick="switchRevPeriod('today', this)">Today</button>
-      <button class="rev-tab" onclick="switchRevPeriod('week', this)">This week</button>
-      <button class="rev-tab" onclick="switchRevPeriod('month', this)">This month</button>
-      <button class="rev-tab" onclick="switchRevPeriod('allTime', this)">All time</button>
+      <button class="rev-tab active" onclick="switchRevPeriod('today', this)" data-en="Today" data-es="Hoy">Today</button>
+      <button class="rev-tab" onclick="switchRevPeriod('week', this)" data-en="This week" data-es="Esta semana">This week</button>
+      <button class="rev-tab" onclick="switchRevPeriod('month', this)" data-en="This month" data-es="Este mes">This month</button>
+      <button class="rev-tab" onclick="switchRevPeriod('allTime', this)" data-en="All time" data-es="Todo el tiempo">All time</button>
     </div>
     <div class="revenue-hero">
       <div class="revenue-amount"><span class="eur">€</span><span id="rev-amount">0.00</span></div>
@@ -923,14 +934,14 @@
     </div>
     <div class="revenue-stats">
       <div class="stat-card">
-        <div class="stat-label">Songs played</div>
+        <div class="stat-label" data-en="Songs played" data-es="Canciones reproducidas">Songs played</div>
         <div class="stat-value" id="rev-count">0</div>
-        <div class="stat-sub">in this period</div>
+        <div class="stat-sub" data-en="in this period" data-es="en este período">in this period</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Avg per song</div>
+        <div class="stat-label" data-en="Avg per song" data-es="Media por canción">Avg per song</div>
         <div class="stat-value" id="rev-avg">€0.00</div>
-        <div class="stat-sub">revenue per request</div>
+        <div class="stat-sub" data-en="revenue per request" data-es="ingresos por solicitud">revenue per request</div>
       </div>
     </div>
   </div>
@@ -941,17 +952,17 @@
       <div class="total-played-icon">🎵</div>
       <div>
         <div class="total-played-num" id="total-played-num">—</div>
-        <div class="total-played-label">total songs played at your venue</div>
+        <div class="total-played-label" data-en="total songs played at your venue" data-es="canciones totales reproducidas en tu local">total songs played at your venue</div>
       </div>
     </div>
 
     <div class="insights-grid">
       <div class="insight-card">
-        <div class="section-title">Most requested</div>
+        <div class="section-title" data-en="Most requested" data-es="Más solicitadas">Most requested</div>
         <div id="top-songs-list"><div class="loading">Loading...</div></div>
       </div>
       <div class="insight-card">
-        <div class="section-title">Busiest hours</div>
+        <div class="section-title" data-en="Busiest hours" data-es="Horas pico">Busiest hours</div>
         <div class="hour-chart" id="hour-chart"></div>
         <div style="display:flex;justify-content:space-between;margin-top:6px;">
           <span style="font-size:10px;color:var(--text-dim)">12am</span>
@@ -966,13 +977,13 @@
   <div class="panel" id="panel-settings">
 
     <div class="settings-section">
-      <div class="settings-section-title">Content filters</div>
-      <div class="settings-section-desc">Control what types of songs patrons can request.</div>
+      <div class="settings-section-title" data-en="Content filters" data-es="Filtros de contenido">Content filters</div>
+      <div class="settings-section-desc" data-en="Control what types of songs patrons can request." data-es="Controla qué tipos de canciones pueden solicitar los clientes.">Control what types of songs patrons can request.</div>
 
       <div class="settings-row">
         <div class="settings-row-info">
-          <div class="settings-row-label">Block explicit lyrics</div>
-          <div class="settings-row-sub">Songs marked explicit on Spotify won't appear in search results</div>
+          <div class="settings-row-label" data-en="Block explicit lyrics" data-es="Bloquear letras explícitas">Block explicit lyrics</div>
+          <div class="settings-row-sub" data-en="Songs marked explicit on Spotify won't appear in search results" data-es="Las canciones marcadas como explícitas en Spotify no aparecerán en los resultados">Songs marked explicit on Spotify won't appear in search results</div>
         </div>
         <label class="mini-toggle">
           <input type="checkbox" id="filter-explicit" checked>
@@ -982,8 +993,8 @@
 
       <div class="settings-row">
         <div class="settings-row-info">
-          <div class="settings-row-label">Genre filtering</div>
-          <div class="settings-row-sub">Limit requests to specific genres only</div>
+          <div class="settings-row-label" data-en="Genre filtering" data-es="Filtrado por género">Genre filtering</div>
+          <div class="settings-row-sub" data-en="Limit requests to specific genres only" data-es="Limitar las solicitudes a géneros específicos">Limit requests to specific genres only</div>
         </div>
         <label class="mini-toggle">
           <input type="checkbox" id="filter-genre-enabled" onchange="toggleGenreSection()">
@@ -993,27 +1004,27 @@
     </div>
 
     <div class="settings-section" id="genre-section" style="opacity:0.4;pointer-events:none;">
-      <div class="settings-section-title">Allowed genres</div>
-      <div class="settings-section-desc">Tap a genre to allow or block it. Blocked genres won't appear in patron search results.</div>
+      <div class="settings-section-title" data-en="Allowed genres" data-es="Géneros permitidos">Allowed genres</div>
+      <div class="settings-section-desc" data-en="Tap a genre to allow or block it. Blocked genres won't appear in patron search results." data-es="Toca un género para permitirlo o bloquearlo. Los géneros bloqueados no aparecerán en los resultados de búsqueda.">Tap a genre to allow or block it. Blocked genres won't appear in patron search results.</div>
 
       <div class="genre-legend">
-        <div class="genre-legend-item"><div class="legend-dot allowed"></div> Allowed</div>
-        <div class="genre-legend-item"><div class="legend-dot blocked"></div> Blocked</div>
-        <div class="genre-legend-item"><div class="legend-dot neutral"></div> Not configured</div>
+        <div class="genre-legend-item"><div class="legend-dot allowed"></div> <span data-en="Allowed" data-es="Permitido">Allowed</span></div>
+        <div class="genre-legend-item"><div class="legend-dot blocked"></div> <span data-en="Blocked" data-es="Bloqueado">Blocked</span></div>
+        <div class="genre-legend-item"><div class="legend-dot neutral"></div> <span data-en="Not configured" data-es="Sin configurar">Not configured</span></div>
       </div>
 
       <div class="genre-grid" id="genre-grid"></div>
     </div>
 
     <div class="settings-section">
-      <div class="settings-section-title">Song language</div>
-      <div class="settings-section-desc">Choose which languages patrons can request music in. Disable a language to hide those songs from search.</div>
+      <div class="settings-section-title" data-en="Song language" data-es="Idioma de canciones">Song language</div>
+      <div class="settings-section-desc" data-en="Choose which languages patrons can request music in." data-es="Elige en qué idiomas pueden solicitar música los clientes.">Choose which languages patrons can request music in.</div>
       <div class="lang-grid" id="lang-grid"></div>
     </div>
 
     <div class="settings-save-row">
-      <div class="save-confirm" id="save-confirm">✓ Settings saved</div>
-      <button class="btn-save" onclick="saveSettings()">Save changes</button>
+      <div class="save-confirm" id="save-confirm">✓ <span data-en="Settings saved" data-es="Ajustes guardados">Settings saved</span></div>
+      <button class="btn-save" onclick="saveSettings()" data-en="Save changes" data-es="Guardar cambios">Save changes</button>
     </div>
   </div>
 
@@ -1023,6 +1034,7 @@
   let venueData = null;
   let revenueData = null;
   let currentRevPeriod = 'today';
+  let currentLang = localStorage.getItem('zorос-dash-lang') || 'en';
 
   const GENRES = [
     { id: 'pop',        label: 'Pop' },
@@ -1061,13 +1073,27 @@
   const langState = {};
   LANGUAGES.forEach(l => { langState[l.id] = true; });
 
+  // ── UI language ──
+  function applyLang() {
+    document.querySelectorAll('[data-en]').forEach(el => {
+      el.textContent = currentLang === 'es' ? el.dataset.es : el.dataset.en;
+    });
+    document.getElementById('lang-btn').textContent = currentLang === 'es' ? '🇪🇸' : '🌐';
+  }
+
+  function toggleLang() {
+    currentLang = currentLang === 'en' ? 'es' : 'en';
+    localStorage.setItem('zoros-dash-lang', currentLang);
+    applyLang();
+  }
+
   function buildSettingsUI() {
     document.getElementById('genre-grid').innerHTML = GENRES.map(g =>
       `<div class="genre-chip" id="chip-${g.id}" onclick="cycleGenre('${g.id}')">${g.label}</div>`
     ).join('');
 
     document.getElementById('lang-grid').innerHTML = LANGUAGES.map(l =>
-      `<div class="lang-chip on" id="lang-${l.id}" onclick="toggleLang('${l.id}')">
+      `<div class="lang-chip on" id="lang-${l.id}" onclick="toggleLangFilter('${l.id}')">
         <span class="flag">${l.flag}</span>
         <span>${l.label}</span>
         <span class="check">✓</span>
@@ -1082,7 +1108,7 @@
     chip.className = 'genre-chip ' + (genreState[id] !== 'neutral' ? genreState[id] : '');
   }
 
-  function toggleLang(id) {
+  function toggleLangFilter(id) {
     langState[id] = !langState[id];
     document.getElementById(`lang-${id}`).className = 'lang-chip ' + (langState[id] ? 'on' : 'off');
   }
@@ -1095,9 +1121,9 @@
   }
 
   function saveSettings() {
-    const confirm = document.getElementById('save-confirm');
-    confirm.classList.add('show');
-    setTimeout(() => confirm.classList.remove('show'), 2500);
+    const el = document.getElementById('save-confirm');
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 2500);
   }
 
   async function init() {
@@ -1125,12 +1151,14 @@
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('spotify-screen').style.display = 'none';
     document.getElementById('dashboard').style.display = 'none';
+    applyLang();
   }
 
   function showSpotifyScreen() {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('spotify-screen').style.display = 'flex';
     document.getElementById('dashboard').style.display = 'none';
+    applyLang();
   }
 
   function showDashboard() {
@@ -1139,11 +1167,12 @@
     document.getElementById('dashboard').style.display = 'block';
 
     if (venueData) {
-      document.getElementById('topbar-venue-name').textContent = venueData.name + (venueData.city ? `, ${venueData.city}` : '');
+      document.getElementById('topbar-venue-name').textContent = venueData.name;
       setToggle(venueData.isActive);
     }
 
     buildSettingsUI();
+    applyLang();
     loadQueue();
     loadRevenue();
     loadInsights();
@@ -1159,7 +1188,7 @@
     errEl.style.display = 'none';
 
     if (!email || !password) {
-      errEl.textContent = 'Please enter your email and password.';
+      errEl.textContent = currentLang === 'es' ? 'Por favor introduce tu correo y contraseña.' : 'Please enter your email and password.';
       errEl.style.display = 'block';
       return;
     }
@@ -1172,7 +1201,7 @@
     const data = await res.json();
 
     if (!data.success) {
-      errEl.textContent = data.error || 'Login failed.';
+      errEl.textContent = data.error || (currentLang === 'es' ? 'Error al iniciar sesión.' : 'Login failed.');
       errEl.style.display = 'block';
       return;
     }
@@ -1197,10 +1226,7 @@
 
   function setToggle(isActive) {
     const toggle = document.getElementById('active-toggle');
-    const label = document.getElementById('toggle-label');
     toggle.checked = isActive;
-    label.textContent = isActive ? 'Open' : 'Closed';
-    label.className = 'toggle-label ' + (isActive ? 'active' : 'inactive');
   }
 
   async function toggleActive() {
@@ -1228,7 +1254,7 @@
 
     const queueEl = document.getElementById('queue-list');
     if (data.queue.length === 0) {
-      queueEl.innerHTML = `<div class="empty-state"><div class="empty-icon">🎶</div>Queue is empty</div>`;
+      queueEl.innerHTML = `<div class="empty-state"><div class="empty-icon">🎶</div>${currentLang === 'es' ? 'Cola vacía' : 'Queue is empty'}</div>`;
     } else {
       queueEl.innerHTML = data.queue.map((s, i) => `
         <div class="song-row">
@@ -1238,14 +1264,14 @@
             <div class="song-name">${esc(s.name)}</div>
             <div class="song-artist">${esc(s.artist)}</div>
           </div>
-          <button class="btn-remove" onclick="removeSong(${s.id})">Remove</button>
+          <button class="btn-remove" onclick="removeSong(${s.id})">${currentLang === 'es' ? 'Quitar' : 'Remove'}</button>
         </div>
       `).join('');
     }
 
     const histEl = document.getElementById('history-list');
     if (data.played.length === 0) {
-      histEl.innerHTML = `<div class="empty-state" style="padding:24px 0"><div class="empty-icon">📭</div>No songs played yet</div>`;
+      histEl.innerHTML = `<div class="empty-state" style="padding:24px 0"><div class="empty-icon">📭</div>${currentLang === 'es' ? 'Sin canciones todavía' : 'No songs played yet'}</div>`;
     } else {
       histEl.innerHTML = data.played.map(s => `
         <div class="history-row">
@@ -1280,7 +1306,7 @@
       reconnectBtn.style.display = 'none';
     } else {
       dot.className = 'spotify-dot';
-      statusText.textContent = 'Not connected';
+      statusText.textContent = currentLang === 'es' ? 'No conectado' : 'Not connected';
       reconnectBtn.style.display = 'inline';
     }
 
@@ -1297,7 +1323,7 @@
       npText.innerHTML = `${esc(data.name)}<br><span style="font-size:13px;font-weight:400;color:var(--text-muted)">${esc(data.artist)}</span>`;
     } else {
       npText.className = 'np-empty';
-      npText.textContent = 'Nothing playing';
+      npText.textContent = currentLang === 'es' ? 'Nada sonando' : 'Nothing playing';
     }
   }
 
@@ -1319,7 +1345,12 @@
   function renderRevenue() {
     if (!revenueData) return;
     const d = revenueData[currentRevPeriod];
-    const labels = { today: 'Today', week: 'This week', month: 'This month', allTime: 'All time' };
+    const labels = {
+      today:   currentLang === 'es' ? 'Hoy' : 'Today',
+      week:    currentLang === 'es' ? 'Esta semana' : 'This week',
+      month:   currentLang === 'es' ? 'Este mes' : 'This month',
+      allTime: currentLang === 'es' ? 'Todo el tiempo' : 'All time'
+    };
     const avg = d.count > 0 ? (d.total / d.count / 100).toFixed(2) : '0.00';
 
     document.getElementById('rev-amount').textContent = (d.total / 100).toFixed(2);
@@ -1337,7 +1368,7 @@
 
     const topEl = document.getElementById('top-songs-list');
     if (data.topSongs.length === 0) {
-      topEl.innerHTML = `<div style="color:var(--text-dim);font-size:13px;padding:12px 0">No songs yet</div>`;
+      topEl.innerHTML = `<div style="color:var(--text-dim);font-size:13px;padding:12px 0">${currentLang === 'es' ? 'Sin canciones todavía' : 'No songs yet'}</div>`;
     } else {
       topEl.innerHTML = data.topSongs.map((s, i) => `
         <div class="top-song-row">
@@ -1384,10 +1415,10 @@
   function timeAgo(ts) {
     if (!ts) return '';
     const diff = Math.floor((Date.now() - new Date(ts)) / 1000);
-    if (diff < 60) return 'just now';
-    if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
-    return `${Math.floor(diff/86400)}d ago`;
+    if (diff < 60) return currentLang === 'es' ? 'ahora mismo' : 'just now';
+    if (diff < 3600) return `${Math.floor(diff/60)}m`;
+    if (diff < 86400) return `${Math.floor(diff/3600)}h`;
+    return `${Math.floor(diff/86400)}d`;
   }
 
   init();
