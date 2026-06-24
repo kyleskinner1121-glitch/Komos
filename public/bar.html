@@ -613,6 +613,207 @@
   }
 
   .loading { text-align: center; padding: 32px; color: var(--text-dim); font-size: 14px; }
+
+  /* ── SETTINGS ── */
+
+  .settings-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+
+  .settings-section-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .settings-section-desc {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+    line-height: 1.5;
+  }
+
+  .settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .settings-row:last-child { border-bottom: none; }
+
+  .settings-row-info { flex: 1; }
+  .settings-row-label { font-size: 14px; font-weight: 500; }
+  .settings-row-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+  .mini-toggle { position: relative; width: 44px; height: 24px; cursor: pointer; flex-shrink: 0; }
+  .mini-toggle input { opacity: 0; width: 0; height: 0; }
+
+  .mini-slider {
+    position: absolute;
+    inset: 0;
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    border-radius: 30px;
+    transition: 0.2s;
+  }
+
+  .mini-slider:before {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    left: 2px;
+    top: 2px;
+    background: var(--text-dim);
+    border-radius: 50%;
+    transition: 0.2s;
+  }
+
+  .mini-toggle input:checked + .mini-slider { background: rgba(124,92,191,0.3); border-color: var(--purple); }
+  .mini-toggle input:checked + .mini-slider:before { background: var(--purple-light); transform: translateX(20px); }
+
+  .genre-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .genre-chip {
+    padding: 7px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    background: transparent;
+    font-family: 'Inter', sans-serif;
+    transition: all 0.15s;
+    user-select: none;
+  }
+
+  .genre-chip.allowed {
+    background: rgba(124,92,191,0.18);
+    border-color: var(--purple);
+    color: var(--purple-light);
+  }
+
+  .genre-chip.blocked {
+    background: rgba(239,68,68,0.1);
+    border-color: rgba(239,68,68,0.4);
+    color: #fca5a5;
+    text-decoration: line-through;
+    opacity: 0.7;
+  }
+
+  .genre-legend {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .genre-legend-item { display: flex; align-items: center; gap: 6px; }
+
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .legend-dot.allowed { background: var(--purple-light); }
+  .legend-dot.blocked { background: var(--red); }
+  .legend-dot.neutral { background: var(--text-dim); }
+
+  .lang-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .lang-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    background: transparent;
+    font-family: 'Inter', sans-serif;
+    transition: all 0.15s;
+    user-select: none;
+  }
+
+  .lang-chip .flag { font-size: 18px; line-height: 1; }
+
+  .lang-chip.on {
+    background: rgba(34,197,94,0.1);
+    border-color: rgba(34,197,94,0.4);
+    color: #86efac;
+  }
+
+  .lang-chip.off { opacity: 0.45; }
+
+  .lang-chip .check {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+
+  .lang-chip.on .check {
+    background: var(--green);
+    border-color: var(--green);
+    color: white;
+  }
+
+  .settings-save-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    padding-top: 8px;
+  }
+
+  .btn-save {
+    background: var(--orange);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 10px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .btn-save:hover { background: var(--orange-dim); }
+
+  .save-confirm {
+    font-size: 13px;
+    color: var(--green);
+    display: none;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .save-confirm.show { display: flex; }
 </style>
 </head>
 <body>
@@ -672,6 +873,7 @@
     <div class="tab active" onclick="switchTab('queue', this)">Queue</div>
     <div class="tab" onclick="switchTab('revenue', this)">Revenue</div>
     <div class="tab" onclick="switchTab('insights', this)">Insights</div>
+    <div class="tab" onclick="switchTab('settings', this)">Settings</div>
   </div>
 
   <!-- QUEUE TAB -->
@@ -759,12 +961,144 @@
       </div>
     </div>
   </div>
+
+  <!-- SETTINGS TAB -->
+  <div class="panel" id="panel-settings">
+
+    <div class="settings-section">
+      <div class="settings-section-title">Content filters</div>
+      <div class="settings-section-desc">Control what types of songs patrons can request.</div>
+
+      <div class="settings-row">
+        <div class="settings-row-info">
+          <div class="settings-row-label">Block explicit lyrics</div>
+          <div class="settings-row-sub">Songs marked explicit on Spotify won't appear in search results</div>
+        </div>
+        <label class="mini-toggle">
+          <input type="checkbox" id="filter-explicit" checked>
+          <span class="mini-slider"></span>
+        </label>
+      </div>
+
+      <div class="settings-row">
+        <div class="settings-row-info">
+          <div class="settings-row-label">Genre filtering</div>
+          <div class="settings-row-sub">Limit requests to specific genres only</div>
+        </div>
+        <label class="mini-toggle">
+          <input type="checkbox" id="filter-genre-enabled" onchange="toggleGenreSection()">
+          <span class="mini-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="settings-section" id="genre-section" style="opacity:0.4;pointer-events:none;">
+      <div class="settings-section-title">Allowed genres</div>
+      <div class="settings-section-desc">Tap a genre to allow or block it. Blocked genres won't appear in patron search results.</div>
+
+      <div class="genre-legend">
+        <div class="genre-legend-item"><div class="legend-dot allowed"></div> Allowed</div>
+        <div class="genre-legend-item"><div class="legend-dot blocked"></div> Blocked</div>
+        <div class="genre-legend-item"><div class="legend-dot neutral"></div> Not configured</div>
+      </div>
+
+      <div class="genre-grid" id="genre-grid"></div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Song language</div>
+      <div class="settings-section-desc">Choose which languages patrons can request music in. Disable a language to hide those songs from search.</div>
+      <div class="lang-grid" id="lang-grid"></div>
+    </div>
+
+    <div class="settings-save-row">
+      <div class="save-confirm" id="save-confirm">✓ Settings saved</div>
+      <button class="btn-save" onclick="saveSettings()">Save changes</button>
+    </div>
+  </div>
+
 </div>
 
 <script>
   let venueData = null;
   let revenueData = null;
   let currentRevPeriod = 'today';
+
+  const GENRES = [
+    { id: 'pop',        label: 'Pop' },
+    { id: 'hiphop',     label: 'Hip-Hop' },
+    { id: 'rnb',        label: 'R&B' },
+    { id: 'rock',       label: 'Rock' },
+    { id: 'indie',      label: 'Indie' },
+    { id: 'electronic', label: 'Electronic' },
+    { id: 'house',      label: 'House' },
+    { id: 'techno',     label: 'Techno' },
+    { id: 'latin',      label: 'Latin' },
+    { id: 'reggaeton',  label: 'Reggaeton' },
+    { id: 'jazz',       label: 'Jazz' },
+    { id: 'soul',       label: 'Soul' },
+    { id: 'classical',  label: 'Classical' },
+    { id: 'country',    label: 'Country' },
+    { id: 'metal',      label: 'Metal' },
+    { id: 'punk',       label: 'Punk' },
+  ];
+
+  const LANGUAGES = [
+    { id: 'en', label: 'English',    flag: '🇬🇧' },
+    { id: 'es', label: 'Spanish',    flag: '🇪🇸' },
+    { id: 'de', label: 'German',     flag: '🇩🇪' },
+    { id: 'fr', label: 'French',     flag: '🇫🇷' },
+    { id: 'nl', label: 'Dutch',      flag: '🇳🇱' },
+    { id: 'pt', label: 'Portuguese', flag: '🇵🇹' },
+    { id: 'it', label: 'Italian',    flag: '🇮🇹' },
+    { id: 'tr', label: 'Turkish',    flag: '🇹🇷' },
+    { id: 'ar', label: 'Arabic',     flag: '🇸🇦' },
+  ];
+
+  const genreState = {};
+  GENRES.forEach(g => { genreState[g.id] = 'neutral'; });
+
+  const langState = {};
+  LANGUAGES.forEach(l => { langState[l.id] = true; });
+
+  function buildSettingsUI() {
+    document.getElementById('genre-grid').innerHTML = GENRES.map(g =>
+      `<div class="genre-chip" id="chip-${g.id}" onclick="cycleGenre('${g.id}')">${g.label}</div>`
+    ).join('');
+
+    document.getElementById('lang-grid').innerHTML = LANGUAGES.map(l =>
+      `<div class="lang-chip on" id="lang-${l.id}" onclick="toggleLang('${l.id}')">
+        <span class="flag">${l.flag}</span>
+        <span>${l.label}</span>
+        <span class="check">✓</span>
+      </div>`
+    ).join('');
+  }
+
+  function cycleGenre(id) {
+    const states = ['neutral', 'allowed', 'blocked'];
+    genreState[id] = states[(states.indexOf(genreState[id]) + 1) % states.length];
+    const chip = document.getElementById(`chip-${id}`);
+    chip.className = 'genre-chip ' + (genreState[id] !== 'neutral' ? genreState[id] : '');
+  }
+
+  function toggleLang(id) {
+    langState[id] = !langState[id];
+    document.getElementById(`lang-${id}`).className = 'lang-chip ' + (langState[id] ? 'on' : 'off');
+  }
+
+  function toggleGenreSection() {
+    const enabled = document.getElementById('filter-genre-enabled').checked;
+    const section = document.getElementById('genre-section');
+    section.style.opacity = enabled ? '1' : '0.4';
+    section.style.pointerEvents = enabled ? 'auto' : 'none';
+  }
+
+  function saveSettings() {
+    const confirm = document.getElementById('save-confirm');
+    confirm.classList.add('show');
+    setTimeout(() => confirm.classList.remove('show'), 2500);
+  }
 
   async function init() {
     const params = new URLSearchParams(window.location.search);
@@ -809,6 +1143,7 @@
       setToggle(venueData.isActive);
     }
 
+    buildSettingsUI();
     loadQueue();
     loadRevenue();
     loadInsights();
