@@ -8,6 +8,8 @@ const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
+const { Resend } = require('resend');
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
 const app = express();
 app.use(cors());
@@ -310,6 +312,30 @@ app.post('/api/apply', async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
       [venueName, city || null, contactName, role || null, email.toLowerCase(), phone || null, volume || null, message || null]
     );
+
+    // Notify the team by email (skips silently if RESEND_API_KEY isn't set)
+    if (resend) {
+      try {
+        await resend.emails.send({
+          from: process.env.NOTIFY_FROM || 'Zoros Applications <onboarding@resend.dev>',
+          to: process.env.NOTIFY_EMAIL || 'team@zorosmusic.com',
+          subject: `New pilot application: ${venueName}`,
+          html: `
+            <h2>New Zoros pilot application</h2>
+            <p><strong>Venue:</strong> ${venueName}</p>
+            <p><strong>City:</strong> ${city || '—'}</p>
+            <p><strong>Contact:</strong> ${contactName}${role ? ` (${role})` : ''}</p>
+            <p><strong>Email:</strong> ${email}</p>
+            <p><strong>Phone:</strong> ${phone || '—'}</p>
+            <p><strong>Typical night volume:</strong> ${volume || '—'}</p>
+            <p><strong>Message:</strong><br>${message ? message.replace(/\n/g, '<br>') : '—'}</p>
+          `
+        });
+      } catch (emailErr) {
+        console.error('Application email notify error:', emailErr);
+      }
+    }
+
     res.json({ success: true, id: result.rows[0].id });
   } catch (e) {
     console.error('Application submit error:', e);
