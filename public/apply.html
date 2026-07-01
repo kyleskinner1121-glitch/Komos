@@ -455,4 +455,165 @@
         labelPhone: 'Phone',
         labelVolume: 'Roughly how busy is a typical night?',
         labelMessage: 'Anything else we should know?',
-        msgPlaceholder: 'Current music
+        msgPlaceholder: 'Current music setup, questions, timing, etc.',
+        optional: '(optional)',
+        selectOne: 'Select one',
+        opt1: 'Under 50 patrons',
+        opt2: '50–150 patrons',
+        opt3: '150–300 patrons',
+        opt4: '300+ patrons',
+        submitBtn: 'Apply for pilot access',
+        submitting: 'Submitting...',
+        successH2: 'Application received',
+        successP: "Thanks — we'll be in touch within a couple of days to talk through setup.<br>In the meantime, feel free to reach us directly at team@zorosmusic.com.",
+        genericError: 'Something went wrong. Please try again.'
+      },
+      es: {
+        eyebrow: 'La máquina de discos digital para bares',
+        h1: 'Una nueva fuente de ingresos.',
+        h1accent: 'Costo cero. Cero complicaciones.',
+        sub: 'Zoros permite que tus clientes paguen para elegir la música — instalación en menos de 15 minutos, sin hardware ni instalación necesaria.',
+        badge: 'Piloto limitado — Madrid',
+        stat1: 'Costo inicial',
+        stat2: 'Ingresos durante el piloto',
+        stat3: 'Minutos para configurar',
+        formTitle: 'Solicita acceso al piloto',
+        formSub: 'Cuéntanos un poco sobre tu local — te contactaremos en un par de días.',
+        labelVenue: 'Nombre del bar / local',
+        labelCity: 'Ciudad / barrio',
+        labelName: 'Tu nombre',
+        labelRole: 'Puesto',
+        rolePlaceholder: 'ej. Propietario, Encargado',
+        labelEmail: 'Correo electrónico',
+        labelPhone: 'Teléfono',
+        labelVolume: '¿Aproximadamente cuánta gente recibe una noche normal?',
+        labelMessage: '¿Algo más que debamos saber?',
+        msgPlaceholder: 'Configuración de música actual, preguntas, plazos, etc.',
+        optional: '(opcional)',
+        selectOne: 'Selecciona una opción',
+        opt1: 'Menos de 50 personas',
+        opt2: '50–150 personas',
+        opt3: '150–300 personas',
+        opt4: 'Más de 300 personas',
+        submitBtn: 'Solicitar acceso al piloto',
+        submitting: 'Enviando...',
+        successH2: 'Solicitud recibida',
+        successP: 'Gracias — te contactaremos en un par de días para hablar sobre la configuración.<br>Mientras tanto, puedes escribirnos directamente a team@zorosmusic.com.',
+        genericError: 'Algo salió mal. Inténtalo de nuevo.'
+      }
+    };
+
+    let lang = 'en';
+
+    function t(key) { return translations[lang][key]; }
+
+    function applyTranslations() {
+      document.getElementById('txt-eyebrow').textContent = t('eyebrow');
+      document.getElementById('txt-h1').firstChild.textContent = t('h1');
+      document.getElementById('txt-h1-accent').textContent = t('h1accent');
+      document.getElementById('txt-sub').textContent = t('sub');
+      document.getElementById('txt-badge').textContent = t('badge');
+      document.getElementById('txt-stat1').textContent = t('stat1');
+      document.getElementById('txt-stat2').textContent = t('stat2');
+      document.getElementById('txt-stat3').textContent = t('stat3');
+      document.getElementById('txt-form-title').textContent = t('formTitle');
+      document.getElementById('txt-form-sub').textContent = t('formSub');
+      document.getElementById('txt-label-venue').textContent = t('labelVenue');
+      document.getElementById('txt-label-city').textContent = t('labelCity');
+      document.getElementById('city').placeholder = lang === 'es' ? 'ej. Malasaña' : 'e.g. Malasaña';
+      document.getElementById('txt-label-name').textContent = t('labelName');
+      document.getElementById('txt-label-role').textContent = t('labelRole');
+      document.getElementById('role').placeholder = t('rolePlaceholder');
+      document.getElementById('txt-label-email').textContent = t('labelEmail') + ' ';
+      document.getElementById('txt-label-phone').innerHTML = t('labelPhone') + ' <span class="optional" id="txt-optional1">' + t('optional') + '</span>';
+      document.getElementById('txt-label-volume').innerHTML = t('labelVolume') + ' <span class="optional" id="txt-optional2">' + t('optional') + '</span>';
+      document.getElementById('txt-label-message').innerHTML = t('labelMessage') + ' <span class="optional" id="txt-optional3">' + t('optional') + '</span>';
+      document.getElementById('message').placeholder = t('msgPlaceholder');
+      document.getElementById('txt-opt-select').textContent = t('selectOne');
+      document.getElementById('txt-opt-1').textContent = t('opt1');
+      document.getElementById('txt-opt-2').textContent = t('opt2');
+      document.getElementById('txt-opt-3').textContent = t('opt3');
+      document.getElementById('txt-opt-4').textContent = t('opt4');
+      document.getElementById('submit-btn').textContent = t('submitBtn');
+      document.getElementById('txt-success-h2').textContent = t('successH2');
+      document.getElementById('txt-success-p').innerHTML = t('successP');
+      document.getElementById('currentLangLabel').textContent = lang.toUpperCase();
+      document.getElementById('dd-en').classList.toggle('active', lang === 'en');
+      document.getElementById('dd-es').classList.toggle('active', lang === 'es');
+    }
+
+    function setLanguage(l) {
+      lang = l;
+      localStorage.setItem('zoros_lang', l);
+      document.getElementById('langScreen').classList.add('hidden');
+      applyTranslations();
+    }
+
+    function switchLanguage(l) {
+      lang = l;
+      localStorage.setItem('zoros_lang', l);
+      closeLangDropdown();
+      applyTranslations();
+    }
+
+    function toggleLangDropdown() {
+      document.getElementById('langDropdown').classList.toggle('open');
+    }
+    function closeLangDropdown() {
+      document.getElementById('langDropdown').classList.remove('open');
+    }
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('.lang-switcher')) closeLangDropdown();
+    });
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const saved = localStorage.getItem('zoros_lang');
+      if (saved === 'en' || saved === 'es') {
+        lang = saved;
+        document.getElementById('langScreen').classList.add('hidden');
+      }
+      applyTranslations();
+    });
+
+    const form = document.getElementById('apply-form');
+    const errorMsg = document.getElementById('error-msg');
+    const submitBtn = document.getElementById('submit-btn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorMsg.style.display = 'none';
+      submitBtn.disabled = true;
+      submitBtn.textContent = t('submitting');
+
+      const payload = {
+        venueName: document.getElementById('venueName').value.trim(),
+        city: document.getElementById('city').value.trim(),
+        contactName: document.getElementById('contactName').value.trim(),
+        role: document.getElementById('role').value.trim(),
+        email: document.getElementById('email').value.trim(),
+        phone: document.getElementById('phone').value.trim(),
+        volume: document.getElementById('volume').value,
+        message: document.getElementById('message').value.trim()
+      };
+
+      try {
+        const res = await fetch('/api/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || t('genericError'));
+
+        form.style.display = 'none';
+        document.getElementById('success-card').style.display = 'block';
+      } catch (err) {
+        errorMsg.textContent = err.message;
+        errorMsg.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = t('submitBtn');
+      }
+    });
+  </script>
+</body>
+</html>
