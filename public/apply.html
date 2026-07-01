@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apply for Zoros Pilot — Madrid</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+  :root {
+    --bg: #0f0d14;
+    --surface: #1a1625;
+    --surface2: #221e30;
+    --border: #2e2840;
+    --purple: #7c5cbf;
+    --purple-light: #9b7dd4;
+    --orange: #f97316;
+    --orange-dim: #c45d10;
+    --text: #f0ecfa;
+    --text-muted: #8b85a0;
+    --text-dim: #5c5570;
+    --green: #22c55e;
+    --red: #ef4444;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    background: radial-gradient(ellipse at 50% 0%, #2a1f4a 0%, var(--bg) 60%);
+  }
+
+  .wrap {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 56px 24px 80px;
+  }
+
+  .logo {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+  .logo span { color: var(--orange); }
+
+  .eyebrow {
+    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 34px;
+    line-height: 1.15;
+    font-weight: 700;
+    margin-top: 32px;
+  }
+  h1 .accent { color: var(--orange); display: block; }
+
+  .sub {
+    color: var(--text-muted);
+    font-size: 16px;
+    line-height: 1.6;
+    margin-top: 16px;
+    max-width: 520px;
+  }
+
+  .badge {
+    display: inline-block;
+    margin-top: 24px;
+    background: rgba(249,115,22,0.1);
+    border: 1px solid rgba(249,115,22,0.35);
+    color: var(--orange);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 8px 14px;
+    border-radius: 999px;
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 32px;
+  }
+  .stat {
+    background: rgba(249,115,22,0.06);
+    border: 1px solid rgba(249,115,22,0.2);
+    border-radius: var(--radius-sm);
+    padding: 16px 10px;
+    text-align: center;
+  }
+  .stat .num {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--orange);
+  }
+  .stat .label {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    line-height: 1.3;
+  }
+
+  form {
+    margin-top: 48px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+  }
+
+  .form-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .form-sub {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-bottom: 24px;
+  }
+
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 480px) { .row { grid-template-columns: 1fr; } }
+
+  .field { margin-bottom: 16px; }
+
+  .field label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .field .optional {
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--text-dim);
+    font-weight: 400;
+  }
+
+  .field input,
+  .field select,
+  .field textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    color: var(--text);
+    font-size: 15px;
+    font-family: 'Inter', sans-serif;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .field textarea { resize: vertical; min-height: 72px; }
+  .field input:focus,
+  .field select:focus,
+  .field textarea:focus { border-color: var(--purple); }
+
+  .btn-primary {
+    width: 100%;
+    background: var(--orange);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 14px;
+    font-size: 15px;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: background 0.2s;
+  }
+  .btn-primary:hover { background: var(--orange-dim); }
+  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .error-msg {
+    background: rgba(239,68,68,0.1);
+    border: 1px solid rgba(239,68,68,0.3);
+    color: #fca5a5;
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    font-size: 14px;
+    margin-top: 12px;
+    display: none;
+  }
+
+  .success-card {
+    display: none;
+    text-align: center;
+    padding: 24px 8px 8px;
+  }
+  .success-card .check {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: rgba(34,197,94,0.12);
+    border: 1px solid rgba(34,197,94,0.4);
+    color: var(--green);
+    font-size: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+  }
+  .success-card h2 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 20px;
+    margin-bottom: 8px;
+  }
+  .success-card p {
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .footer {
+    margin-top: 40px;
+    color: var(--text-dim);
+    font-size: 12px;
+    text-align: center;
+  }
+  .footer a { color: var(--text-muted); text-decoration: none; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo">ZOROS<span>.</span></div>
+    <div class="eyebrow">Digital jukebox for bars</div>
+
+    <h1>A new revenue stream.<span class="accent">Zero cost. Zero hassle.</span></h1>
+    <p class="sub">Zoros lets your guests pay to choose the music — set up in under 15 minutes, with no hardware or installation required.</p>
+
+    <div class="badge">Limited pilot — Madrid</div>
+
+    <div class="stats">
+      <div class="stat"><div class="num">€0</div><div class="label">Upfront cost</div></div>
+      <div class="stat"><div class="num">75%</div><div class="label">Revenue during pilot</div></div>
+      <div class="stat"><div class="num">&lt;15</div><div class="label">Minutes to set up</div></div>
+    </div>
+
+    <form id="apply-form">
+      <div class="form-title">Apply for pilot access</div>
+      <div class="form-sub">Tell us a bit about your venue — we'll follow up within a couple of days.</div>
+
+      <div class="row">
+        <div class="field">
+          <label>Bar / venue name</label>
+          <input type="text" id="venueName" required>
+        </div>
+        <div class="field">
+          <label>City / neighborhood</label>
+          <input type="text" id="city" placeholder="e.g. Malasaña" required>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Your name</label>
+          <input type="text" id="contactName" required>
+        </div>
+        <div class="field">
+          <label>Role</label>
+          <input type="text" id="role" placeholder="e.g. Owner, Manager">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="email" required>
+        </div>
+        <div class="field">
+          <label>Phone <span class="optional">(optional)</span></label>
+          <input type="tel" id="phone">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Roughly how busy is a typical night? <span class="optional">(optional)</span></label>
+        <select id="volume">
+          <option value="">Select one</option>
+          <option value="under_50">Under 50 patrons</option>
+          <option value="50_150">50–150 patrons</option>
+          <option value="150_300">150–300 patrons</option>
+          <option value="300_plus">300+ patrons</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Anything else we should know? <span class="optional">(optional)</span></label>
+        <textarea id="message" placeholder="Current music setup, questions, timing, etc."></textarea>
+      </div>
+
+      <button type="submit" class="btn-primary" id="submit-btn">Apply for pilot access</button>
+      <div class="error-msg" id="error-msg"></div>
+    </form>
+
+    <div class="success-card" id="success-card">
+      <div class="check">✓</div>
+      <h2>Application received</h2>
+      <p>Thanks — we'll be in touch within a couple of days to talk through setup.<br>In the meantime, feel free to reach us directly at team@zorosmusic.com.</p>
+    </div>
+
+    <div class="footer">
+      <a href="mailto:team@zorosmusic.com">team@zorosmusic.com</a> &nbsp;·&nbsp;
+      <a href="https://instagram.com/zoros.music" target="_blank">@zoros.music</a> &nbsp;·&nbsp;
+      <a href="https://zorosmusic.com" target="_blank">zorosmusic.com</a>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('apply-form');
+    const errorMsg = document.getElementById('error-msg');
+    const submitBtn = document.getElementById('submit-btn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorMsg.style.display = 'none';
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitting...';
+
+      const payload = {
+        venueName: document.getElementById('venueName').value.trim(),
+        city: document.getElementById('city').value.trim(),
+        contactName: document.getElementById('contactName').value.trim(),
+        role: document.getElementById('role').value.trim(),
+        email: document.getElementById('email').value.trim(),
+        phone: document.getElementById('phone').value.trim(),
+        volume: document.getElementById('volume').value,
+        message: document.getElementById('message').value.trim()
+      };
+
+      try {
+        const res = await fetch('/api/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Something went wrong. Please try again.');
+
+        form.style.display = 'none';
+        document.getElementById('success-card').style.display = 'block';
+      } catch (err) {
+        errorMsg.textContent = err.message;
+        errorMsg.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Apply for pilot access';
+      }
+    });
+  </script>
+</body>
+</html>
