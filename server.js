@@ -79,6 +79,21 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS venue_applications (
+        id SERIAL PRIMARY KEY,
+        venue_name VARCHAR(255) NOT NULL,
+        city VARCHAR(255),
+        contact_name VARCHAR(255) NOT NULL,
+        role VARCHAR(255),
+        email VARCHAR(255) NOT NULL,
+        phone VARCHAR(50),
+        volume VARCHAR(50),
+        message TEXT,
+        status VARCHAR(50) DEFAULT 'new',
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
     console.log('Database initialized');
   } catch (e) {
     console.error('DB init error:', e);
@@ -283,6 +298,35 @@ app.get('/api/venue/insights', requireVenueAuth, async (req, res) => {
 });
 
 // ── ADMIN: CREATE VENUE ──
+// ── VENUE APPLICATIONS (pilot signup form) ──
+app.post('/api/apply', async (req, res) => {
+  const { venueName, city, contactName, role, email, phone, volume, message } = req.body;
+  if (!venueName || !contactName || !email) {
+    return res.status(400).json({ error: 'Venue name, contact name, and email are required' });
+  }
+  try {
+    const result = await pool.query(
+      `INSERT INTO venue_applications (venue_name, city, contact_name, role, email, phone, volume, message)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [venueName, city || null, contactName, role || null, email.toLowerCase(), phone || null, volume || null, message || null]
+    );
+    res.json({ success: true, id: result.rows[0].id });
+  } catch (e) {
+    console.error('Application submit error:', e);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
+  }
+});
+
+app.get('/api/admin/applications', async (req, res) => {
+  if (req.query.adminKey !== process.env.ADMIN_KEY) return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const result = await pool.query('SELECT * FROM venue_applications ORDER BY created_at DESC');
+    res.json({ applications: result.rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/admin/create-venue', async (req, res) => {
   const { adminKey, name, city, venueId, email, password } = req.body;
   if (adminKey !== process.env.ADMIN_KEY) return res.status(403).json({ error: 'Unauthorized' });
@@ -753,6 +797,7 @@ app.post('/api/queue/skip/:id', async (req, res) => {
   }
 });
 
+app.get('/apply', (req, res) => res.sendFile(path.join(__dirname, 'public', 'apply.html')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/success', (req, res) => res.sendFile(path.join(__dirname, 'public', 'success.html')));
 app.get('/bundle-success', (req, res) => res.sendFile(path.join(__dirname, 'public', 'bundle-success.html')));
