@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Komos — Sign In</title>
+<title>Zoros — Sign In</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
   :root { --black: #120E2E; --dark: #1A1245; --card: #231960; --border: #3D3284; --orange: #FF5500; --orange-light: #FF7733; --white: #FFFFFF; --muted: #9B93CC; --green: #27ae60; --red: #e74c3c; }
@@ -41,7 +41,7 @@
 </head>
 <body>
 
-<div class="logo">Komos</div>
+<div class="logo">Zoros</div>
 <div class="subtitle">Sign In or Create Account</div>
 
 <div class="card">
@@ -80,7 +80,7 @@
     <div class="benefits">
       <div class="benefit"><span class="benefit-icon">♫</span> Buy song bundles and save</div>
       <div class="benefit"><span class="benefit-icon">⚡</span> One tap to queue — no payment each time</div>
-      <div class="benefit"><span class="benefit-icon">🎯</span> Credits work at any Komos venue</div>
+      <div class="benefit"><span class="benefit-icon">🎯</span> Credits work at any Zoros venue</div>
     </div>
   </div>
 </div>
@@ -170,7 +170,7 @@ async function signup() {
 }
 
 function continueAsGuest() {
-  sessionStorage.setItem('komos_guest', '1');
+  sessionStorage.setItem('zoros_guest', '1');
   const dest = venueId !== 'default' ? `/?venue=${venueId}` : '/';
   window.location.href = dest;
 }
