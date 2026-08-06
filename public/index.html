@@ -175,7 +175,7 @@
 <div class="lang-screen" id="langScreen">
   <div class="lang-logo">Zoros</div>
   <div class="lang-tagline">Your Night · Your Music</div>
-  <div class="lang-prompt">Choose your language / Elige tu idioma</div>
+  <div class="lang-prompt">Choose your language / Elige tu idioma / Kies je taal / Choisis ta langue</div>
   <button class="lang-btn" onclick="setLanguage('en')">
     English
     <span class="lang-native">English</span>
@@ -183,6 +183,14 @@
   <button class="lang-btn" onclick="setLanguage('es')">
     Español
     <span class="lang-native">Spanish</span>
+  </button>
+  <button class="lang-btn" onclick="setLanguage('nl')">
+    Nederlands
+    <span class="lang-native">Dutch</span>
+  </button>
+  <button class="lang-btn" onclick="setLanguage('fr')">
+    Français
+    <span class="lang-native">French</span>
   </button>
 </div>
 
@@ -237,6 +245,8 @@
       <div class="lang-dropdown" id="langDropdown">
         <div class="lang-dropdown-item" id="dd-en" onclick="switchLanguage('en')">🇬🇧 English <span class="check">✓</span></div>
         <div class="lang-dropdown-item" id="dd-es" onclick="switchLanguage('es')">🇪🇸 Español <span class="check">✓</span></div>
+        <div class="lang-dropdown-item" id="dd-nl" onclick="switchLanguage('nl')">🇳🇱 Nederlands <span class="check">✓</span></div>
+        <div class="lang-dropdown-item" id="dd-fr" onclick="switchLanguage('fr')">🇫🇷 Français <span class="check">✓</span></div>
       </div>
     </div>
   </div>
@@ -309,16 +319,27 @@ let currentUser = null;
 let lang = 'en';
 let pendingBundleType = null;
 
-const BUNDLES = {
-  single: { songs: '1 Song', price: '€0.99', saving: null },
-  five:   { songs: '5 Songs', price: '€3.99', saving: 'Save €1.00' },
-  ten:    { songs: '10 Songs', price: '€5.99', saving: 'Save €3.91' },
-};
-
-const BUNDLES_ES = {
-  single: { songs: '1 Canción', price: '€0.99', saving: null },
-  five:   { songs: '5 Canciones', price: '€3.99', saving: 'Ahorra €1.00' },
-  ten:    { songs: '10 Canciones', price: '€5.99', saving: 'Ahorra €3.91' },
+const BUNDLES_BY_LANG = {
+  en: {
+    single: { songs: '1 Song', price: '€0.99', saving: null },
+    five:   { songs: '5 Songs', price: '€3.99', saving: 'Save €1.00' },
+    ten:    { songs: '10 Songs', price: '€5.99', saving: 'Save €3.91' },
+  },
+  es: {
+    single: { songs: '1 Canción', price: '€0.99', saving: null },
+    five:   { songs: '5 Canciones', price: '€3.99', saving: 'Ahorra €1.00' },
+    ten:    { songs: '10 Canciones', price: '€5.99', saving: 'Ahorra €3.91' },
+  },
+  nl: {
+    single: { songs: '1 Nummer', price: '€0,99', saving: null },
+    five:   { songs: '5 Nummers', price: '€3,99', saving: 'Bespaar €1,00' },
+    ten:    { songs: '10 Nummers', price: '€5,99', saving: 'Bespaar €3,91' },
+  },
+  fr: {
+    single: { songs: '1 Morceau', price: '0,99 €', saving: null },
+    five:   { songs: '5 Morceaux', price: '3,99 €', saving: 'Économise 1,00 €' },
+    ten:    { songs: '10 Morceaux', price: '5,99 €', saving: 'Économise 3,91 €' },
+  },
 };
 
 const T = {
@@ -364,6 +385,7 @@ const T = {
     error: 'Something went wrong.\nCheck your connection.',
     redirecting: 'Redirecting...',
     adding: 'Adding...',
+    oneCreditLabel: '1 credit',
   },
   es: {
     venueDefault: 'Tu Noche · Tu Música',
@@ -407,6 +429,95 @@ const T = {
     error: 'Algo salió mal.\nComprueba tu conexión.',
     redirecting: 'Redirigiendo...',
     adding: 'Añadiendo...',
+    oneCreditLabel: '1 crédito',
+  },
+  nl: {
+    venueDefault: 'Jouw Avond · Jouw Muziek',
+    heroH1: 'Jouw avond.',
+    heroEm: 'Jouw muziek.',
+    heroP: 'Zoek een nummer · Betaal · Hoor het in de zaak',
+    perSong: 'per nummer',
+    p5save: 'Bespaar €1,00',
+    p10save: 'Bespaar €3,91',
+    bundleTitle: 'Koop een Bundel',
+    bundleSubtitle: 'Bespaar op nummers — tegoeden werken bij elke Zoros-locatie',
+    bestValue: 'Beste Prijs',
+    oneSong: '1 Nummer',
+    oneSongDesc: 'Betaal per nummer — geen account nodig',
+    fiveSongs: '5 Nummers',
+    fiveSongsDesc: '5 tegoeden · account vereist',
+    fiveSave: 'Bespaar €1,00 t.o.v. los',
+    tenSongs: '10 Nummers',
+    tenSongsDesc: '10 tegoeden · account vereist',
+    tenSave: 'Bespaar €3,91 t.o.v. los',
+    bundleNote: '5 en 10 tegoeden worden opgeslagen in je account en werken bij elke Zoros-locatie.',
+    queueBtn: 'Wachtrij',
+    upNext: 'Hierna',
+    emptyQueue: 'De wachtrij is leeg.\nVraag als eerste een nummer aan.',
+    emptySearch: 'Zoek een nummer en\nvoeg het toe aan de wachtrij van de zaak',
+    searchPlaceholder: 'Zoek artiest of nummer...',
+    resultsLabel: 'Resultaten',
+    noResults: 'Geen resultaten gevonden.\nProbeer een andere zoekopdracht.',
+    cancel: 'Annuleren',
+    useCredit: 'GEBRUIK 1 TEGOED — SPEEL DIT NUMMER',
+    pay: 'BETAAL €0,99 — SPEEL DIT NUMMER',
+    payInstead: 'BETAAL LIEVER €0,99',
+    buyBundle: '🎵 Koop een bundel en bespaar',
+    confirmBuy: (price) => `KOOP VOOR ${price}`,
+    confirmLoginNote: 'Je maakt een gratis account aan om je tegoeden te bewaren — kost 5 seconden met Google.',
+    creditsRemaining: (n) => `Je hebt nog ${n} tegoed${n !== 1 ? 'en' : ''}`,
+    creditsBadge: (n) => `${n} tegoed${n !== 1 ? 'en' : ''}`,
+    addedToast: (n) => `♫ Toegevoegd — nog ${n} tegoed${n !== 1 ? 'en' : ''}`,
+    searchToast: 'Zoek hieronder een nummer en tik om €0,99 te betalen',
+    loading: 'Zoeken...',
+    error: 'Er is iets misgegaan.\nControleer je verbinding.',
+    redirecting: 'Doorverwijzen...',
+    adding: 'Toevoegen...',
+    oneCreditLabel: '1 tegoed',
+  },
+  fr: {
+    venueDefault: 'Ta Soirée · Ta Musique',
+    heroH1: 'Ta soirée.',
+    heroEm: 'Ta musique.',
+    heroP: 'Cherche un morceau · Paie · Écoute-le dans le bar',
+    perSong: 'par morceau',
+    p5save: 'Économise 1,00 €',
+    p10save: 'Économise 3,91 €',
+    bundleTitle: 'Acheter un Pack',
+    bundleSubtitle: 'Économise sur les morceaux — les crédits fonctionnent dans tous les bars Zoros',
+    bestValue: 'Meilleur Prix',
+    oneSong: '1 Morceau',
+    oneSongDesc: 'Paie à la chanson — sans compte',
+    fiveSongs: '5 Morceaux',
+    fiveSongsDesc: '5 crédits · compte requis',
+    fiveSave: 'Économise 1,00 € vs à l\'unité',
+    tenSongs: '10 Morceaux',
+    tenSongsDesc: '10 crédits · compte requis',
+    tenSave: 'Économise 3,91 € vs à l\'unité',
+    bundleNote: 'Les crédits de 5 et 10 sont enregistrés sur ton compte et fonctionnent dans tous les bars Zoros.',
+    queueBtn: 'File',
+    upNext: 'À Suivre',
+    emptyQueue: 'La file est vide.\nSois le premier à demander un morceau.',
+    emptySearch: 'Cherche un morceau et\najoute-le à la file du bar',
+    searchPlaceholder: 'Cherche un artiste ou un morceau...',
+    resultsLabel: 'Résultats',
+    noResults: 'Aucun résultat.\nEssaie une autre recherche.',
+    cancel: 'Annuler',
+    useCredit: 'UTILISER 1 CRÉDIT — JOUER CE MORCEAU',
+    pay: 'PAYER 0,99 € — JOUER CE MORCEAU',
+    payInstead: 'PAYER 0,99 € À LA PLACE',
+    buyBundle: '🎵 Acheter un pack et économiser',
+    confirmBuy: (price) => `ACHETER POUR ${price}`,
+    confirmLoginNote: 'Tu créeras un compte gratuit pour stocker tes crédits — 5 secondes avec Google.',
+    creditsRemaining: (n) => `Il te reste ${n} crédit${n !== 1 ? 's' : ''}`,
+    creditsBadge: (n) => `${n} crédit${n !== 1 ? 's' : ''}`,
+    addedToast: (n) => `♫ Ajouté — ${n} crédit${n !== 1 ? 's' : ''} restant${n !== 1 ? 's' : ''}`,
+    searchToast: 'Cherche un morceau ci-dessous, puis appuie pour payer 0,99 €',
+    loading: 'Recherche...',
+    error: 'Une erreur est survenue.\nVérifie ta connexion.',
+    redirecting: 'Redirection...',
+    adding: 'Ajout...',
+    oneCreditLabel: '1 crédit',
   }
 };
 
@@ -456,6 +567,8 @@ function applyTranslations() {
   document.getElementById('currentLangLabel').textContent = lang.toUpperCase();
   document.getElementById('dd-en').classList.toggle('active', lang === 'en');
   document.getElementById('dd-es').classList.toggle('active', lang === 'es');
+  document.getElementById('dd-nl').classList.toggle('active', lang === 'nl');
+  document.getElementById('dd-fr').classList.toggle('active', lang === 'fr');
 }
 
 function setLanguage(l) {
@@ -487,7 +600,7 @@ document.addEventListener('click', function(e) {
 
 window.addEventListener('DOMContentLoaded', () => {
   const saved = localStorage.getItem('zoros_lang');
-  if (saved === 'en' || saved === 'es') {
+  if (saved === 'en' || saved === 'es' || saved === 'nl' || saved === 'fr') {
     lang = saved;
     document.getElementById('langScreen').classList.add('hidden');
     applyTranslations();
@@ -549,7 +662,7 @@ function selectBundle(type) {
   }
 
   pendingBundleType = type;
-  const bundle = lang === 'es' ? BUNDLES_ES[type] : BUNDLES[type];
+  const bundle = (BUNDLES_BY_LANG[lang] || BUNDLES_BY_LANG.en)[type];
 
   document.getElementById('confirmSongs').textContent = bundle.songs;
   document.getElementById('confirmPrice').textContent = bundle.price;
@@ -595,7 +708,7 @@ async function confirmBuyBundle() {
     else showToast(data.error || 'Something went wrong');
   } catch(e) {
     showToast('Payment failed. Try again.');
-    const bundle = lang === 'es' ? BUNDLES_ES[pendingBundleType] : BUNDLES[pendingBundleType];
+    const bundle = (BUNDLES_BY_LANG[lang] || BUNDLES_BY_LANG.en)[pendingBundleType];
     btn.textContent = t('confirmBuy', bundle.price);
     btn.style.pointerEvents = 'auto';
   }
@@ -629,7 +742,7 @@ function renderTracks(tracks) {
     el.innerHTML = `<div class="empty"><div class="icon">🔍</div><p>${t('noResults').replace('\n','<br>')}</p></div>`;
     return;
   }
-  const priceLabel = currentUser && currentUser.credits > 0 ? (lang === 'es' ? '1 crédito' : '1 credit') : '€0.99';
+  const priceLabel = currentUser && currentUser.credits > 0 ? t('oneCreditLabel') : '€0.99';
   el.innerHTML = `<p class="section-label">${t('resultsLabel')}</p>` + tracks.map(tr => `
     <div class="track-card" onclick='selectTrack(${JSON.stringify(tr).replace(/'/g, "&#39;")})'>
       <img class="track-img" src="${tr.image || ''}" onerror="this.style.background='#3D3284'" alt="">
