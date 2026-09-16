@@ -26,11 +26,26 @@ async function getRepliedAddressesSince(sinceDate) {
   try {
     const lock = await client.getMailboxLock('INBOX');
     try {
-      for await (const msg of client.fetch({ since: sinceDate }, { envelope: true })) {
+      for await (const msg of client.fetch({ since: sinceDate }, { envelope: true, headers: true })) {
         const from = msg.envelope && msg.envelope.from && msg.envelope.from[0];
-        if (from && from.address) {
-          replied.add(from.address.toLowerCase());
-        }
+        if (!from || !from.address) continue;
+
+        // Skip auto-replies (vacation responders, "thanks for reaching out"
+        // acknowledgment bots, etc.) — these aren't a real response, so the bar
+        // should still get its normal follow-up rather than being marked
+        // Responded and dropped from outreach. Auto-reply tools almost always
+        // set one of these standard headers specifically so other automated
+        // systems (like this one) can recognize them.
+        const headerText = msg.headers ? msg.headers.toString('utf8') : '';
+        const looksAutomated =
+          /^Auto-Submitted:\s*auto-(replied|generated|notified)/im.test(headerText) ||
+          /^X-Autoreply:\s*yes/im.test(headerText) ||
+          /^X-Autorespond/im.test(headerText) ||
+          /^Precedence:\s*(bulk|auto_reply|junk)/im.test(headerText);
+
+        if (looksAutomated) continue;
+
+        replied.add(from.address.toLowerCase());
       }
     } finally {
       lock.release();
