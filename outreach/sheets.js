@@ -27,11 +27,34 @@ function getSheetsClient() {
   return google.sheets({ version: 'v4', auth });
 }
 
-// Returns every tab name in the spreadsheet (i.e. every city), in order.
+// Returns every tab name that actually follows the Bar Tracker layout (i.e.
+// every city tab) — the spreadsheet can also hold utility tabs like
+// "Objection Tracker" or "Companies & Contacts" that live alongside the
+// city tabs but aren't a list of bars, so each candidate tab's row 3 is
+// checked for the expected "#" / "Bar Name" header before it's included.
+// This avoids ever misreading an unrelated tab's rows as bars to email.
 async function listCityTabs(spreadsheetId) {
   const sheets = getSheetsClient();
   const meta = await sheets.spreadsheets.get({ spreadsheetId });
-  return meta.data.sheets.map(s => s.properties.title);
+  const allTabs = meta.data.sheets.map(s => s.properties.title);
+
+  const cityTabs = [];
+  for (const tabName of allTabs) {
+    try {
+      const headerRes = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `'${tabName}'!A3:B3`
+      });
+      const header = headerRes.data.values && headerRes.data.values[0];
+      const looksLikeBarTracker = header && header[0] && header[1] &&
+        header[0].trim() === '#' && /bar name/i.test(header[1]);
+      if (looksLikeBarTracker) cityTabs.push(tabName);
+    } catch (e) {
+      // Couldn't read this tab's header — skip it rather than risk treating
+      // it as a bar list.
+    }
+  }
+  return cityTabs;
 }
 
 // Reads a single city tab and returns an array of row objects. Skips the
