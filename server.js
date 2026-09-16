@@ -10,6 +10,12 @@ const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
 const { Resend } = require('resend');
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+const { runOutreachAgent } = require('./outreach/run');
+
+// ── OUTREACH AGENT CONFIG ──
+// Spreadsheet ID from the Bar Tracker's URL (docs.google.com/spreadsheets/d/<THIS>/edit).
+// Overridable via env var in case the sheet ever changes without a code edit.
+const BAR_TRACKER_SHEET_ID = process.env.BAR_TRACKER_SHEET_ID || '1uKiVOtCNHVNYQyjYmmpzvosUOh79BDFxrShsS99ssWA';
 
 const app = express();
 app.use(cors());
@@ -370,6 +376,24 @@ app.post('/api/admin/create-venue', async (req, res) => {
   }
 });
 
+// ── ADMIN: RUN OUTREACH AGENT ──
+// Manual trigger for testing. Query params:
+//   adminKey  (required) — same ADMIN_KEY as the other admin endpoints
+//   dryRun=true           — draft emails and log what WOULD happen, send/write nothing
+//   limit=N                — process at most N eligible bars per city tab (safe for a first test)
+app.get('/api/admin/run-outreach', async (req, res) => {
+  if (req.query.adminKey !== process.env.ADMIN_KEY) return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const dryRun = req.query.dryRun === 'true';
+    const limitPerCity = req.query.limit ? parseInt(req.query.limit, 10) : null;
+    const summary = await runOutreachAgent({ spreadsheetId: BAR_TRACKER_SHEET_ID, dryRun, limitPerCity });
+    res.json({ success: true, dryRun, summary });
+  } catch (e) {
+    console.error('[outreach] Manual run error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── BUNDLE PAYMENT ──
 app.post('/api/create-bundle-payment', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Must be logged in to buy bundles' });
@@ -590,6 +614,26 @@ setTimeout(() => {
   setInterval(autoClearPlayed, 10000);
 }, 5000);
 
+// ── OUTREACH AGENT (SCHEDULED) ──
+// Runs every 6 hours rather than once a day on the dot — safe to do, because
+// the agent's own decision logic already refuses to touch any one bar row
+// twice on the same calendar day, so extra runs just find nothing new to do
+// for rows already handled today. Running more often just means a server
+// restart doesn't cost a full day's delay before outreach picks back up.
+async function runScheduledOutreach() {
+  try {
+    const summary = await runOutreachAgent({ spreadsheetId: BAR_TRACKER_SHEET_ID });
+    console.log('[outreach] Scheduled run complete:', JSON.stringify(summary));
+  } catch (e) {
+    console.error('[outreach] Scheduled run error:', e);
+  }
+}
+
+setTimeout(() => {
+  runScheduledOutreach();
+  setInterval(runScheduledOutreach, 6 * 60 * 60 * 1000);
+}, 60000);
+
 app.get('/auth/spotify', (req, res) => {
   const venueId = req.query.venueId || req.session.venueId || 'default';
   const scopes = 'user-modify-playback-state user-read-playback-state user-read-recently-played';
@@ -699,6 +743,10 @@ app.get('/api/debug', async (req, res) => {
       hasStripe: !!process.env.STRIPE_SECRET_KEY,
       hasBaseUrl: !!process.env.BASE_URL,
       hasDatabase: !!process.env.DATABASE_URL,
+      hasGmailAddress: !!process.env.GMAIL_ADDRESS,
+      hasGmailAppPassword: !!process.env.GMAIL_APP_PASSWORD,
+      hasGoogleServiceAccountKey: !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY,
+      hasAnthropicKey: !!process.env.ANTHROPIC_API_KEY,
       baseUrl: process.env.BASE_URL,
       connectedVenues: result.rows.map(r => r.venue_id)
     });
