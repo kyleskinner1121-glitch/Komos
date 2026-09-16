@@ -136,6 +136,12 @@ async function runOutreachAgent({ spreadsheetId, dryRun = false, limitPerCity = 
           }
           console.log(`[outreach] ${tabName} / ${bar.barName}: reply detected, marked Responded`);
         } else if (decision.action === 'first-touch' || decision.action === 'follow-up') {
+          // Count this as an attempt against the limit the moment we commit to
+          // it, not only on success — otherwise a run where every draft fails
+          // (e.g. an API billing issue) never trips the limit and burns through
+          // every eligible bar instead of stopping at N like it's supposed to.
+          processedThisCity++;
+
           const { subject, body } = await draftEmail({ bar, cityTabName: tabName, mode: decision.mode });
 
           if (!dryRun) {
@@ -153,7 +159,6 @@ async function runOutreachAgent({ spreadsheetId, dryRun = false, limitPerCity = 
           else { cityLog.followUps++; summary.followUps++; }
 
           console.log(`[outreach]${dryRun ? ' [DRY RUN]' : ''} ${tabName} / ${bar.barName}: sent ${decision.action} — "${subject}"`);
-          processedThisCity++;
         } else {
           cityLog.skipped++;
           summary.skipped++;
