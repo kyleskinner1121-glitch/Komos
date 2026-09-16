@@ -113,6 +113,7 @@ async function runOutreachAgent({ spreadsheetId, dryRun = false, limitPerCity = 
 
       if (limitPerCity && processedThisCity >= limitPerCity) {
         cityLog.skipped++;
+        summary.skipped++;
         continue;
       }
 
