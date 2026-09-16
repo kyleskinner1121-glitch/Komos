@@ -6,7 +6,7 @@
 
 const Anthropic = require('@anthropic-ai/sdk');
 
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5-20250929';
+const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 // ^ Confirm this is still a current model ID in the Anthropic Console
 //   (console.anthropic.com) before relying on it — model names change.
 
