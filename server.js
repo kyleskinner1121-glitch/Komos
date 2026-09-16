@@ -620,7 +620,17 @@ setTimeout(() => {
 // twice on the same calendar day, so extra runs just find nothing new to do
 // for rows already handled today. Running more often just means a server
 // restart doesn't cost a full day's delay before outreach picks back up.
+//
+// Gated behind OUTREACH_LIVE so that setting up credentials and going live
+// for real are two separate, deliberate steps — without this, the scheduled
+// job would start sending real emails the moment all the credentials happened
+// to be valid, even mid-setup/testing, with no explicit "I'm ready" moment.
+// Set OUTREACH_LIVE=true in Railway only when you're ready for real sends.
 async function runScheduledOutreach() {
+  if (process.env.OUTREACH_LIVE !== 'true') {
+    console.log('[outreach] Scheduled run skipped — OUTREACH_LIVE is not set to "true".');
+    return;
+  }
   try {
     const summary = await runOutreachAgent({ spreadsheetId: BAR_TRACKER_SHEET_ID });
     console.log('[outreach] Scheduled run complete:', JSON.stringify(summary));
