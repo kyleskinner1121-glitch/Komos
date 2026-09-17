@@ -56,4 +56,64 @@ async function getRepliedAddressesSince(sinceDate) {
   return replied;
 }
 
-module.exports = { getRepliedAddressesSince };
+// Scans INBOX for delivery-failure notifications ("bounces") since
+// `sinceDate` and returns the subset of `candidateEmails` (the bar
+// addresses we've actually sent to) that show up in one of those bounce
+// messages. This is a best-effort heuristic — bounce message formats vary
+// by mail server — not a guarantee: it looks for the standard bounce
+// sender/subject patterns (mailer-daemon, "Delivery Status Notification",
+// etc.), then checks whether that message's text mentions one of our own
+// bar addresses. Two-pass so we only fetch full message bodies for the
+// small number of messages that actually look like bounces.
+async function getBouncedEmails(sinceDate, candidateEmails) {
+  const user = process.env.GMAIL_ADDRESS;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+  if (!user || !pass) throw new Error('GMAIL_ADDRESS / GMAIL_APP_PASSWORD are not set');
+  if (!candidateEmails || !candidateEmails.length) return new Set();
+
+  const candidatesLower = candidateEmails.map(e => e.toLowerCase());
+
+  const client = new ImapFlow({
+    host: 'imap.gmail.com',
+    port: 993,
+    secure: true,
+    auth: { user, pass },
+    logger: false
+  });
+
+  const bounced = new Set();
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock('INBOX');
+    try {
+      const bounceUids = [];
+      for await (const msg of client.fetch({ since: sinceDate }, { envelope: true, uid: true })) {
+        const from = msg.envelope && msg.envelope.from && msg.envelope.from[0];
+        const fromAddress = ((from && from.address) || '').toLowerCase();
+        const subject = (msg.envelope && msg.envelope.subject) || '';
+
+        const looksLikeBounce =
+          /mailer-daemon|postmaster|mail delivery subsystem/i.test(fromAddress) ||
+          /delivery (status )?notification|undeliverable|mail delivery failed|returned mail|failure notice/i.test(subject);
+
+        if (looksLikeBounce) bounceUids.push(msg.uid);
+      }
+
+      if (bounceUids.length) {
+        for await (const msg of client.fetch(bounceUids, { source: true }, { uid: true })) {
+          const bodyText = msg.source ? msg.source.toString('utf8').toLowerCase() : '';
+          for (const email of candidatesLower) {
+            if (bodyText.includes(email)) bounced.add(email);
+          }
+        }
+      }
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout();
+  }
+  return bounced;
+}
+
+module.exports = { getRepliedAddressesSince, getBouncedEmails };
