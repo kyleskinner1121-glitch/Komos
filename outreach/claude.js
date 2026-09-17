@@ -22,17 +22,17 @@ function getClient() {
 const VOICE_REFERENCES = `
 Reference email A (direct/professional register):
 ---
-Subject: A quick idea for St. James's Gate — free extra revenue stream
+Subject: A quick idea for St. James's Gate: free extra revenue stream
 
 Hey St. James's Gate team,
 
-We're building Zoros — a digital jukebox that lets your guests pay to pick the next song straight from their phone. No app, no hardware, it just plugs into the Spotify you're already running.
+We're building Zoros. It's a digital jukebox that lets your guests pay to pick the next song straight from their phone. No app, no hardware needed. It just plugs into the Spotify you're already running.
 
 We're piloting it with a handful of bars in Amsterdam this month, and we'd love St. James's Gate to be one of them.
 
-Two things that matter most: it costs you nothing, ever — €0 upfront, €0 ongoing, you just keep 75% of what gets played during the pilot. And you're always in control — skip or override any request, any time. If a song doesn't fit the vibe, it never plays.
+Two things that matter most. It costs you nothing, ever: €0 upfront, €0 ongoing, you just keep 75% of what gets played during the pilot. And you're always in control. Skip or override any request, any time. If a song doesn't fit the vibe, it never plays.
 
-I've attached a quick one-pager with the details. Up for a 15-minute call, or happy to just swing by and show you live — whichever's easier for you.
+I've attached a quick one-pager with the details. Up for a 15-minute call? Or happy to just swing by and show you live, whichever's easier for you.
 
 Best,
 Kyle
@@ -41,17 +41,17 @@ Zoros
 
 Reference email B (casual/personal register — approved as-is, including the generic vibe compliment):
 ---
-Subject: Quick idea for [Bar Name] — free extra revenue stream
+Subject: Quick idea for [Bar Name]: free extra revenue stream
 
 Hey [Bar Name] team,
 
-Love the vibe you've got going at [Bar Name] — that's actually part of why we're reaching out.
+Love the vibe you've got going at [Bar Name]. That's actually part of why we're reaching out.
 
 We're building Zoros, a digital jukebox that lets your guests pay to pick the next song straight from their phone. No app, no hardware, it just plugs into the Spotify you're already running. Bars running systems like this are seeing real extra revenue, just from guests wanting to hear their song next.
 
-We're picking 5-10 bars in [City] to pilot with this month, and we'd love [Bar Name] to be one of them. It costs nothing — €0 upfront, €0 ongoing, you keep 75% of what's played — and you're always in control: skip or override anything that doesn't fit the vibe.
+We're picking 5-10 bars in [City] to pilot with this month, and we'd love [Bar Name] to be one of them. It costs nothing. €0 upfront, €0 ongoing, you keep 75% of what's played. And you're always in control: skip or override anything that doesn't fit the vibe.
 
-Got 15 minutes this week for a quick call, or happy to swing by and show you live? You can also check out @zoros.music on Instagram if you want a feel for it first.
+Got 15 minutes this week for a quick call? Or happy to swing by and show you live. You can also check out @zoros.music on Instagram if you want a feel for it first.
 
 Best,
 Kyle
@@ -97,6 +97,8 @@ Requirements for every email, first-touch or follow-up:
 - Do NOT invent specific revenue figures beyond what's in the reference emails (no "€X,XXX/month" claims) — keep any revenue-potential language directional, not a specific unverified number.
 - Do NOT claim to have personally visited the bar or seen anything specific about it beyond its name/neighborhood — a generic warm compliment on the bar/neighborhood's vibe is fine (this is an approved choice, not an oversight), but don't fabricate specific visit details.
 - Plain text only, no markdown formatting, no placeholder brackets left in the output.
+- Do NOT use em dashes (—) or en dashes anywhere, and do NOT use a hyphen as punctuation to join two clauses (e.g. "it's free - no catch"). Break those into separate sentences instead, or use a period, comma, or colon. Normal hyphenated words are still fine and expected (e.g. "follow-up", "15-minute").
+- Keep the tone like a real, slightly informal email a busy founder actually typed, not a polished marketing email. Vary sentence length, use contractions, and avoid corporate-sounding phrasing.
 
 ${VOICE_REFERENCES}
 `.trim();
