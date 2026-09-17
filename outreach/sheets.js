@@ -97,14 +97,17 @@ async function getBarRows(spreadsheetId, tabName) {
   return rows;
 }
 
-// Writes Status, Last Contact, and Next Follow-Up back into a specific row.
-// Pass nextFollowUp: null to clear that cell (e.g. once the one allowed
-// follow-up has been sent, or a reply came in).
-async function updateBarRow(spreadsheetId, tabName, sheetRow, { status, lastContact, nextFollowUp }) {
+// Writes Status, Last Contact, Next Follow-Up, and/or Notes back into a
+// specific row. Pass nextFollowUp: null to clear that cell (e.g. once the
+// one allowed follow-up has been sent, or a reply came in). `notes` is used
+// to flag problems (a bounced/invalid address, a send that failed) directly
+// in the sheet so they're visible without checking server logs.
+async function updateBarRow(spreadsheetId, tabName, sheetRow, { status, lastContact, nextFollowUp, notes }) {
   const sheets = getSheetsClient();
   const statusCol = 'J';
   const lastContactCol = 'M';
   const nextFollowUpCol = 'N';
+  const notesCol = 'O';
 
   const data = [];
   if (status !== undefined) {
@@ -115,6 +118,9 @@ async function updateBarRow(spreadsheetId, tabName, sheetRow, { status, lastCont
   }
   if (nextFollowUp !== undefined) {
     data.push({ range: `'${tabName}'!${nextFollowUpCol}${sheetRow}`, values: [[nextFollowUp || '']] });
+  }
+  if (notes !== undefined) {
+    data.push({ range: `'${tabName}'!${notesCol}${sheetRow}`, values: [[notes]] });
   }
   if (!data.length) return;
 
