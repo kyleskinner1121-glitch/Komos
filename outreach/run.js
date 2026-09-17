@@ -7,7 +7,7 @@
 const { listCityTabs, getBarRows, updateBarRow } = require('./sheets');
 const { sendOutreachEmail } = require('./mailer');
 const { draftEmail } = require('./claude');
-const { getRepliedAddressesSince } = require('./imap');
+const { getRepliedAddressesSince, getBouncedEmails } = require('./imap');
 
 const FOLLOW_UP_DAYS = 6;
 
@@ -36,13 +36,20 @@ function isEligible(bar) {
 }
 
 // Decide what action (if any) to take on a single row. Returns one of:
-// { action: 'reply-detected' | 'first-touch' | 'follow-up' | 'skip', reason }
-function decideAction(bar, repliedAddresses) {
+// { action: 'reply-detected' | 'bounce-detected' | 'first-touch' | 'follow-up' | 'skip', reason }
+function decideAction(bar, repliedAddresses, bouncedAddresses) {
   const emailLower = bar.email.toLowerCase();
 
   // A reply from this address always wins, regardless of what stage the row is in.
   if (bar.lastContact && repliedAddresses.has(emailLower) && !/^responded$/i.test(bar.status)) {
     return { action: 'reply-detected' };
+  }
+
+  // A bounce means the address is likely wrong — flag it and stop retrying,
+  // rather than continuing to email an address that doesn't work. Skipped
+  // once already flagged so it doesn't get rewritten every run.
+  if (bar.lastContact && bouncedAddresses.has(emailLower) && !/^email invalid$/i.test(bar.status)) {
+    return { action: 'bounce-detected' };
   }
 
   // Already ran today for this row — never send twice in one run/day.
@@ -77,34 +84,57 @@ function decideAction(bar, repliedAddresses) {
 async function runOutreachAgent({ spreadsheetId, dryRun = false, limitPerCity = null } = {}) {
   if (!spreadsheetId) throw new Error('spreadsheetId is required');
 
-  const summary = { cities: {}, sent: 0, followUps: 0, repliesDetected: 0, skipped: 0, errors: [] };
+  const summary = { cities: {}, sent: 0, followUps: 0, repliesDetected: 0, bounced: 0, skipped: 0, errors: [] };
 
   const cityTabs = await listCityTabs(spreadsheetId);
 
-  // One IMAP pass per run, looking back far enough to catch a reply to the
-  // oldest thing we might still be waiting on (first-touch + follow-up window).
+  // Read every city tab's rows up front, both so we can loop over them below
+  // and so we have the full list of bar email addresses to check for bounces
+  // against (bounce detection needs to know every address we might have sent
+  // to, not just the ones in whichever tab we're currently processing).
+  const tabRows = {};
+  const allEligibleEmails = [];
+  for (const tabName of cityTabs) {
+    try {
+      const rows = await getBarRows(spreadsheetId, tabName);
+      tabRows[tabName] = rows;
+      for (const bar of rows) {
+        if (isEligible(bar)) allEligibleEmails.push(bar.email);
+      }
+    } catch (e) {
+      console.error(`[outreach] Could not read tab "${tabName}":`, e.message);
+      summary.errors.push(`Read failed for "${tabName}": ${e.message}`);
+    }
+  }
+
+  // One IMAP pass per run for each check, looking back far enough to catch a
+  // reply/bounce for the oldest thing we might still be waiting on (first-touch
+  // + follow-up window).
   const since = new Date();
   since.setDate(since.getDate() - (FOLLOW_UP_DAYS + 2));
+
   let repliedAddresses = new Set();
   try {
     repliedAddresses = await getRepliedAddressesSince(since);
   } catch (e) {
     console.error('[outreach] IMAP reply check failed, continuing without it:', e.message);
-    summary.errors.push(`IMAP check failed: ${e.message}`);
+    summary.errors.push(`IMAP reply check failed: ${e.message}`);
+  }
+
+  let bouncedAddresses = new Set();
+  try {
+    bouncedAddresses = await getBouncedEmails(since, allEligibleEmails);
+  } catch (e) {
+    console.error('[outreach] IMAP bounce check failed, continuing without it:', e.message);
+    summary.errors.push(`IMAP bounce check failed: ${e.message}`);
   }
 
   for (const tabName of cityTabs) {
-    const cityLog = { checked: 0, sent: 0, followUps: 0, repliesDetected: 0, skipped: 0 };
-    summary.cities[tabName] = cityLog;
+    const rows = tabRows[tabName];
+    if (!rows) continue; // this tab's read failed above; already logged
 
-    let rows;
-    try {
-      rows = await getBarRows(spreadsheetId, tabName);
-    } catch (e) {
-      console.error(`[outreach] Could not read tab "${tabName}":`, e.message);
-      summary.errors.push(`Read failed for "${tabName}": ${e.message}`);
-      continue;
-    }
+    const cityLog = { checked: 0, sent: 0, followUps: 0, repliesDetected: 0, bounced: 0, skipped: 0 };
+    summary.cities[tabName] = cityLog;
 
     let processedThisCity = 0;
     for (const bar of rows) {
@@ -119,7 +149,7 @@ async function runOutreachAgent({ spreadsheetId, dryRun = false, limitPerCity = 
 
       let decision;
       try {
-        decision = decideAction(bar, repliedAddresses);
+        decision = decideAction(bar, repliedAddresses, bouncedAddresses);
       } catch (e) {
         summary.errors.push(`${tabName} / ${bar.barName}: decision error — ${e.message}`);
         continue;
@@ -136,6 +166,17 @@ async function runOutreachAgent({ spreadsheetId, dryRun = false, limitPerCity = 
             });
           }
           console.log(`[outreach] ${tabName} / ${bar.barName}: reply detected, marked Responded`);
+        } else if (decision.action === 'bounce-detected') {
+          cityLog.bounced++;
+          summary.bounced++;
+          if (!dryRun) {
+            await updateBarRow(spreadsheetId, tabName, bar.sheetRow, {
+              status: 'Email Invalid',
+              nextFollowUp: null,
+              notes: 'Auto: email bounced. This address may be wrong, fix it and clear Status/Last Contact to retry.'
+            });
+          }
+          console.log(`[outreach] ${tabName} / ${bar.barName}: bounce detected, marked Email Invalid`);
         } else if (decision.action === 'first-touch' || decision.action === 'follow-up') {
           // Count this as an attempt against the limit the moment we commit to
           // it, not only on success — otherwise a run where every draft fails
@@ -146,7 +187,17 @@ async function runOutreachAgent({ spreadsheetId, dryRun = false, limitPerCity = 
           const { subject, body } = await draftEmail({ bar, cityTabName: tabName, mode: decision.mode });
 
           if (!dryRun) {
-            await sendOutreachEmail({ to: bar.email, subject, text: body, cityTabName: tabName });
+            try {
+              await sendOutreachEmail({ to: bar.email, subject, text: body, cityTabName: tabName });
+            } catch (sendErr) {
+              // Flag the failure directly on the sheet so it's visible without
+              // checking server logs, then let it bubble up to be logged/counted below.
+              await updateBarRow(spreadsheetId, tabName, bar.sheetRow, {
+                status: 'Send Failed',
+                notes: `Auto: send failed — ${sendErr.message}`
+              });
+              throw sendErr;
+            }
             await updateBarRow(spreadsheetId, tabName, bar.sheetRow, {
               status: 'Contacted',
               lastContact: todayStr(),
