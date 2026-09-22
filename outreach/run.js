@@ -4,7 +4,7 @@
 // first-touch email, a follow-up, or nothing, and write the result back
 // into the sheet. The sheet is the only state store — no database table.
 
-const { listCityTabs, getBarRows, updateBarRow } = require('./sheets');
+const { listCityTabs, getAllBarRows, updateBarRow } = require('./sheets');
 const { sendOutreachEmail } = require('./mailer');
 const { draftEmail } = require('./claude');
 const { getRepliedAddressesSince, getBouncedEmails } = require('./imap');
@@ -84,7 +84,7 @@ function decideAction(bar, repliedAddresses, bouncedAddresses) {
 async function runOutreachAgent({ spreadsheetId, dryRun = false, limitPerCity = null } = {}) {
   if (!spreadsheetId) throw new Error('spreadsheetId is required');
 
-  const summary = { cities: {}, sent: 0, followUps: 0, repliesDetected: 0, bounced: 0, skipped: 0, errors: [] };
+  const summary = { cities: {}, sent: 0, followUps: 0, repliesDetected: 0, bounced: 0, skipped: 0, errors: [], drafts: [] };
 
   const cityTabs = await listCityTabs(spreadsheetId);
 
@@ -92,18 +92,27 @@ async function runOutreachAgent({ spreadsheetId, dryRun = false, limitPerCity = 
   // and so we have the full list of bar email addresses to check for bounces
   // against (bounce detection needs to know every address we might have sent
   // to, not just the ones in whichever tab we're currently processing).
-  const tabRows = {};
+  //
+  // This is ONE batched Sheets API call for every tab, not one call per tab —
+  // with 20-30+ city tabs, a call-per-tab loop runs straight into Google's
+  // per-minute read quota and several tabs silently fail to read.
+  let tabRows = {};
+  try {
+    tabRows = await getAllBarRows(spreadsheetId, cityTabs);
+  } catch (e) {
+    console.error('[outreach] Could not batch-read city tabs:', e.message);
+    summary.errors.push(`Batch read failed: ${e.message}`);
+  }
+
   const allEligibleEmails = [];
   for (const tabName of cityTabs) {
-    try {
-      const rows = await getBarRows(spreadsheetId, tabName);
-      tabRows[tabName] = rows;
-      for (const bar of rows) {
-        if (isEligible(bar)) allEligibleEmails.push(bar.email);
-      }
-    } catch (e) {
-      console.error(`[outreach] Could not read tab "${tabName}":`, e.message);
-      summary.errors.push(`Read failed for "${tabName}": ${e.message}`);
+    const rows = tabRows[tabName];
+    if (!rows) {
+      summary.errors.push(`Read failed for "${tabName}" (missing from batch read result)`);
+      continue;
+    }
+    for (const bar of rows) {
+      if (isEligible(bar)) allEligibleEmails.push(bar.email);
     }
   }
 
@@ -185,6 +194,11 @@ async function runOutreachAgent({ spreadsheetId, dryRun = false, limitPerCity = 
           processedThisCity++;
 
           const { subject, body } = await draftEmail({ bar, cityTabName: tabName, mode: decision.mode });
+
+          // Included in the response so the drafted text can be read straight
+          // from the JSON (e.g. in a browser) instead of digging through logs,
+          // especially useful for a dry run.
+          summary.drafts.push({ city: tabName, bar: bar.barName, action: decision.action, subject, body });
 
           if (!dryRun) {
             try {
