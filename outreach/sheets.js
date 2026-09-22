@@ -4,6 +4,11 @@
 // separate database table. Each city lives on its own tab, and every tab
 // is expected to follow the same 2-row header band + column layout as the
 // original Amsterdam tab.
+//
+// IMPORTANT: as the number of city tabs grows, reading them one tab at a
+// time (one API call per tab) runs into Google Sheets' per-minute read
+// quota. Every read in this file uses batchGet so a whole run costs a
+// small, fixed number of API calls no matter how many city tabs exist.
 
 const { google } = require('googleapis');
 
@@ -33,40 +38,36 @@ function getSheetsClient() {
 // city tabs but aren't a list of bars, so each candidate tab's row 3 is
 // checked for the expected "#" / "Bar Name" header before it's included.
 // This avoids ever misreading an unrelated tab's rows as bars to email.
+//
+// Uses one batchGet for every tab's header row instead of one call per tab
+// — with 30+ city tabs, one-call-per-tab blows through Google's per-minute
+// read quota almost immediately.
 async function listCityTabs(spreadsheetId) {
   const sheets = getSheetsClient();
   const meta = await sheets.spreadsheets.get({ spreadsheetId });
   const allTabs = meta.data.sheets.map(s => s.properties.title);
+  if (!allTabs.length) return [];
+
+  const ranges = allTabs.map(tabName => `'${tabName}'!A3:B3`);
+  const res = await sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges });
+  const valueRanges = res.data.valueRanges || [];
 
   const cityTabs = [];
-  for (const tabName of allTabs) {
-    try {
-      const headerRes = await sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: `'${tabName}'!A3:B3`
-      });
-      const header = headerRes.data.values && headerRes.data.values[0];
-      const looksLikeBarTracker = header && header[0] && header[1] &&
-        header[0].trim() === '#' && /bar name/i.test(header[1]);
-      if (looksLikeBarTracker) cityTabs.push(tabName);
-    } catch (e) {
-      // Couldn't read this tab's header — skip it rather than risk treating
-      // it as a bar list.
-    }
+  for (let i = 0; i < allTabs.length; i++) {
+    const header = valueRanges[i] && valueRanges[i].values && valueRanges[i].values[0];
+    const looksLikeBarTracker = header && header[0] && header[1] &&
+      header[0].trim() === '#' && /bar name/i.test(header[1]);
+    if (looksLikeBarTracker) cityTabs.push(allTabs[i]);
   }
   return cityTabs;
 }
 
-// Reads a single city tab and returns an array of row objects. Skips the
-// 2-row header band (title + legend) and the real header row (row 3), and
-// stops at the first fully-blank row of the Bar Tracker table (so we don't
-// pick up the Objection Tracker / partner-lead tables further down the tab).
-async function getBarRows(spreadsheetId, tabName) {
-  const sheets = getSheetsClient();
-  const range = `'${tabName}'!A4:O2000`;
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
-  const values = res.data.values || [];
-
+// Turns one tab's raw A4:O2000 values into row objects. Skips the 2-row
+// header band (title + legend) and the real header row (row 3) — the caller
+// already sliced to start at row 4 — and stops at the first fully-blank row
+// of the Bar Tracker table (so we don't pick up the Objection Tracker /
+// partner-lead tables further down the tab).
+function parseBarRows(values) {
   const rows = [];
   for (let i = 0; i < values.length; i++) {
     const raw = values[i];
@@ -95,6 +96,38 @@ async function getBarRows(spreadsheetId, tabName) {
     });
   }
   return rows;
+}
+
+// Reads a single city tab and returns an array of row objects. Kept around
+// for callers that only need one tab — the agent's main run loop uses
+// getAllBarRows below instead, so a run with many city tabs doesn't make
+// one Sheets API call per tab.
+async function getBarRows(spreadsheetId, tabName) {
+  const sheets = getSheetsClient();
+  const range = `'${tabName}'!A4:O2000`;
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+  return parseBarRows(res.data.values || []);
+}
+
+// Reads every given city tab's bar rows in ONE Sheets API call (via
+// batchGet with one range per tab) instead of one call per tab. Returns
+// { [tabName]: rows[] }. This is what keeps a run's Google Sheets API usage
+// to a small, fixed number of calls no matter how many city tabs exist —
+// critical once the spreadsheet has 20-30+ cities, since one-call-per-tab
+// runs straight into Google's per-minute read quota.
+async function getAllBarRows(spreadsheetId, tabNames) {
+  if (!tabNames || !tabNames.length) return {};
+  const sheets = getSheetsClient();
+  const ranges = tabNames.map(tabName => `'${tabName}'!A4:O2000`);
+  const res = await sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges });
+  const valueRanges = res.data.valueRanges || [];
+
+  const result = {};
+  for (let i = 0; i < tabNames.length; i++) {
+    const values = (valueRanges[i] && valueRanges[i].values) || [];
+    result[tabNames[i]] = parseBarRows(values);
+  }
+  return result;
 }
 
 // Writes Status, Last Contact, Next Follow-Up, and/or Notes back into a
@@ -130,4 +163,4 @@ async function updateBarRow(spreadsheetId, tabName, sheetRow, { status, lastCont
   });
 }
 
-module.exports = { listCityTabs, getBarRows, updateBarRow };
+module.exports = { listCityTabs, getBarRows, getAllBarRows, updateBarRow };
