@@ -1,4 +1,4 @@
-// v5
+// v6
 require('dotenv').config();
 const express = require('express');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -31,11 +31,22 @@ const pool = new Pool({
 // ── SESSIONS ──
 app.use(session({
   store: new pgSession({ pool, createTableIfMissing: true }),
-  secret: process.env.SESSION_SECRET || 'komos-secret',
+  secret: process.env.SESSION_SECRET || 'zoros-secret',
   resave: false,
   saveUninitialized: false,
   cookie: { maxAge: 30 * 24 * 60 * 60 * 1000, sameSite: 'lax' }
 }));
+
+// Returns true the first time a Stripe session is claimed, false on every repeat.
+async function claimPayment(sessionId, kind) {
+  try {
+    await pool.query('INSERT INTO processed_payments (session_id, kind) VALUES ($1, $2)', [sessionId, kind]);
+    return true;
+  } catch (e) {
+    if (e.code === '23505' || /duplicate|unique/i.test(e.message)) return false; // already claimed
+    throw e;
+  }
+}
 
 async function initDB() {
   try {
@@ -99,6 +110,15 @@ async function initDB() {
         volume VARCHAR(50),
         message TEXT,
         status VARCHAR(50) DEFAULT 'new',
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    // One row per Stripe checkout session we've already honored — stops a refresh
+    // of the success page (or a reused session_id) from queuing songs / adding credits twice.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS processed_payments (
+        session_id VARCHAR(255) PRIMARY KEY,
+        kind VARCHAR(50),
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
@@ -420,6 +440,7 @@ app.post('/api/create-bundle-payment', async (req, res) => {
         quantity: 1
       }],
       mode: 'payment',
+      metadata: { bundleType, userId: String(req.session.userId) },
       success_url: `${process.env.BASE_URL}/bundle-success?session_id={CHECKOUT_SESSION_ID}&bundle=${bundleType}&venue_id=${venueId}`,
       cancel_url: `${process.env.BASE_URL}?venue=${venueId}`
     });
@@ -433,12 +454,20 @@ app.post('/api/create-bundle-payment', async (req, res) => {
 app.post('/api/bundle/confirm', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
   const bundles = { single: 1, five: 5, ten: 10 };
-  const { session_id, bundle } = req.body;
-  const credits = bundles[bundle];
-  if (!credits) return res.status(400).json({ error: 'Invalid bundle' });
+  const { session_id } = req.body;
+  if (!session_id) return res.status(400).json({ error: 'Missing session' });
   try {
     const stripeSession = await stripe.checkout.sessions.retrieve(session_id);
     if (stripeSession.payment_status !== 'paid') return res.status(400).json({ error: 'Payment not confirmed' });
+    // Trust what was actually paid for (stored on the Stripe session), not the URL
+    const meta = stripeSession.metadata || {};
+    const credits = bundles[meta.bundleType];
+    if (!credits) return res.status(400).json({ error: 'Invalid bundle' });
+    if (meta.userId && meta.userId !== String(req.session.userId)) return res.status(403).json({ error: 'Payment belongs to another account' });
+    if (!(await claimPayment(session_id, 'bundle'))) {
+      const cur = await pool.query('SELECT credits FROM users WHERE id = $1', [req.session.userId]);
+      return res.json({ success: true, alreadyProcessed: true, credits: cur.rows[0]?.credits ?? 0 });
+    }
     const result = await pool.query(
       'UPDATE users SET credits = credits + $1 WHERE id = $2 RETURNING credits',
       [credits, req.session.userId]
@@ -537,7 +566,7 @@ async function addToSpotifyQueue(venueId, uri) {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` }
     });
-    return r.status === 204;
+    return r.ok; // Spotify returns 200 or 204 depending on API version
   } catch (e) {
     return false;
   }
@@ -811,6 +840,14 @@ app.post('/api/create-payment', async (req, res) => {
         quantity: 1
       }],
       mode: 'payment',
+      metadata: {
+        trackId: String(trackId || ''),
+        trackName: String(trackName || '').slice(0, 480),
+        artist: String(artist || '').slice(0, 480),
+        image: String(image || '').slice(0, 480),
+        uri: String(uri || ''),
+        venueId: String(venueId)
+      },
       success_url: `${process.env.BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}&track_id=${trackId}&track_name=${encodeURIComponent(trackName)}&artist=${encodeURIComponent(artist)}&image=${encodeURIComponent(image || '')}&uri=${encodeURIComponent(uri)}&venue_id=${venueId}`,
       cancel_url: `${process.env.BASE_URL}?venue=${venueId}`
     });
@@ -822,17 +859,38 @@ app.post('/api/create-payment', async (req, res) => {
 
 app.post('/api/queue/add', async (req, res) => {
   try {
-    const { session_id, track_id, track_name, artist, image, uri, venue_id = 'default' } = req.body;
+    const { session_id } = req.body;
+    if (!session_id) return res.status(400).json({ error: 'Missing session' });
     const stripeSession = await stripe.checkout.sessions.retrieve(session_id);
     if (stripeSession.payment_status !== 'paid') {
       return res.status(400).json({ error: 'Payment not confirmed' });
     }
+    // Song details come from the Stripe session (set when payment was created), not the URL,
+    // so a paid session can't be swapped for a different song or venue.
+    const m = stripeSession.metadata || {};
+    const b = req.body;
+    const track_id = m.trackId || b.track_id;
+    const track_name = m.trackName || b.track_name;
+    const artist = m.artist || b.artist;
+    const image = m.image || b.image;
+    const uri = m.uri || b.uri;
+    const venue_id = m.venueId || b.venue_id || 'default';
+
+    const countQueued = async () => parseInt((await pool.query(
+      "SELECT COUNT(*) FROM songs WHERE venue_id = $1 AND status = 'queued'", [venue_id]
+    )).rows[0].count);
+
+    // Already honored this payment (e.g. patron refreshed the success page) — don't queue again
+    if (!(await claimPayment(session_id, 'song'))) {
+      return res.json({ success: true, alreadyProcessed: true, position: await countQueued() });
+    }
+
     const addedToSpotify = await addToSpotifyQueue(venue_id, uri);
     const id = Date.now();
     await pool.query(`
       INSERT INTO songs (id, track_id, name, artist, image, uri, venue_id, added_to_spotify, amount_paid)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    `, [id, track_id, track_name, artist, image, uri, venue_id, addedToSpotify, 99]);
+    `, [id, track_id, track_name, artist, image, uri, venue_id, addedToSpotify, stripeSession.amount_total || 99]);
     const position = await pool.query(
       "SELECT COUNT(*) FROM songs WHERE venue_id = $1 AND status = 'queued'",
       [venue_id]
@@ -863,18 +921,19 @@ app.get('/api/queue', async (req, res) => {
   }
 });
 
-app.post('/api/queue/played/:id', async (req, res) => {
+app.post('/api/queue/played/:id', requireVenueAuth, async (req, res) => {
   try {
-    await pool.query("UPDATE songs SET status = 'played', played_at = NOW() WHERE id = $1", [req.params.id]);
+    await pool.query("UPDATE songs SET status = 'played', played_at = NOW() WHERE id = $1 AND venue_id = $2", [req.params.id, req.session.venueId]);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.post('/api/queue/skip/:id', async (req, res) => {
+// Only the logged-in bar can remove songs from its own queue
+app.post('/api/queue/skip/:id', requireVenueAuth, async (req, res) => {
   try {
-    await pool.query("DELETE FROM songs WHERE id = $1", [req.params.id]);
+    await pool.query("DELETE FROM songs WHERE id = $1 AND venue_id = $2", [req.params.id, req.session.venueId]);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
