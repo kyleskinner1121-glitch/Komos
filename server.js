@@ -122,6 +122,9 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    // Bar music settings (explicit filter, blocked genres). ADD COLUMN IF NOT EXISTS
+    // means this runs safely on every start — no manual migration needed.
+    await pool.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'::jsonb`);
     console.log('Database initialized');
   } catch (e) {
     console.error('DB init error:', e);
@@ -242,6 +245,21 @@ app.post('/api/venue/toggle', requireVenueAuth, async (req, res) => {
       [req.session.venueId]
     );
     res.json({ success: true, isActive: result.rows[0].is_active });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── VENUE MUSIC SETTINGS ──
+app.get('/api/venue/settings', requireVenueAuth, async (req, res) => {
+  res.json({ settings: await getVenueSettings(req.session.venueId) });
+});
+
+app.post('/api/venue/settings', requireVenueAuth, async (req, res) => {
+  try {
+    const settings = cleanSettings(req.body);
+    await pool.query('UPDATE venues SET settings = $1 WHERE venue_id = $2', [JSON.stringify(settings), req.session.venueId]);
+    res.json({ success: true, settings });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -483,6 +501,9 @@ app.post('/api/queue/use-credit', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
   const { track_id, track_name, artist, image, uri, venue_id = 'default' } = req.body;
   try {
+    if (!(await uriAllowedForVenue(venue_id, uri))) {
+      return res.status(400).json({ error: 'blocked', blocked: true });
+    }
     const user = await pool.query('SELECT credits FROM users WHERE id = $1', [req.session.userId]);
     if (!user.rows.length || user.rows[0].credits < 1) {
       return res.status(400).json({ error: 'No credits remaining' });
@@ -524,6 +545,92 @@ async function getSpotifyToken() {
   spotifyToken = data.access_token;
   tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
   return spotifyToken;
+}
+
+// ── BAR MUSIC SETTINGS (explicit + genre filters) ──
+// Spotify gives genres per artist, not per song, so a song is judged by its main artist.
+// Each dashboard genre chip matches any Spotify genre containing one of these words.
+const GENRE_KEYWORDS = {
+  pop: ['pop'],
+  hiphop: ['hip hop', 'rap', 'trap', 'drill', 'grime'],
+  rnb: ['r&b', 'rnb'],
+  rock: ['rock'],
+  indie: ['indie'],
+  electronic: ['electronic', 'edm', 'electro', 'dubstep', 'drum and bass', 'trance'],
+  house: ['house'],
+  techno: ['techno'],
+  latin: ['latin', 'salsa', 'bachata', 'cumbia', 'merengue'],
+  reggaeton: ['reggaeton', 'urbano latino', 'trap latino', 'dembow'],
+  jazz: ['jazz'],
+  soul: ['soul', 'funk', 'motown'],
+  classical: ['classical', 'orchestra', 'baroque', 'opera'],
+  country: ['country'],
+  metal: ['metal'],
+  punk: ['punk']
+};
+
+function cleanSettings(raw) {
+  const s = raw || {};
+  return {
+    blockExplicit: !!s.blockExplicit,
+    blockedGenres: Array.isArray(s.blockedGenres) ? s.blockedGenres.filter(g => GENRE_KEYWORDS[g]) : []
+  };
+}
+
+async function getVenueSettings(venueId) {
+  try {
+    const r = await pool.query('SELECT settings FROM venues WHERE venue_id = $1', [venueId]);
+    return cleanSettings(r.rows[0] && r.rows[0].settings);
+  } catch (e) {
+    return cleanSettings({});
+  }
+}
+
+// Artist genres rarely change, so remember them for a day to keep Spotify calls low.
+const artistGenreCache = new Map();
+async function getArtistGenres(artistId) {
+  if (!artistId) return [];
+  const hit = artistGenreCache.get(artistId);
+  if (hit && Date.now() - hit.at < 24 * 60 * 60 * 1000) return hit.genres;
+  try {
+    const token = await getSpotifyToken();
+    const r = await fetch(`https://api.spotify.com/v1/artists/${artistId}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) return [];
+    const data = await r.json();
+    const genres = (data.genres || []).map(g => g.toLowerCase());
+    artistGenreCache.set(artistId, { genres, at: Date.now() });
+    return genres;
+  } catch (e) {
+    return [];
+  }
+}
+
+// track needs { explicit, artistId }. Returns true if the bar's settings allow it.
+async function trackAllowed(track, settings) {
+  if (settings.blockExplicit && track.explicit) return false;
+  if (!settings.blockedGenres.length) return true;
+  const genres = await getArtistGenres(track.artistId);
+  return !settings.blockedGenres.some(id =>
+    GENRE_KEYWORDS[id].some(word => genres.some(g => g.includes(word)))
+  );
+}
+
+// Server-side check before taking money or using a credit, so filtered songs
+// can't be queued by bypassing the search screen.
+async function uriAllowedForVenue(venueId, uri) {
+  const settings = await getVenueSettings(venueId);
+  if (!settings.blockExplicit && !settings.blockedGenres.length) return true;
+  const trackId = String(uri || '').split(':').pop();
+  if (!trackId) return false;
+  try {
+    const token = await getSpotifyToken();
+    const r = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) return true; // don't block a sale because Spotify hiccuped
+    const t = await r.json();
+    return trackAllowed({ explicit: t.explicit, artistId: t.artists && t.artists[0] && t.artists[0].id }, settings);
+  } catch (e) {
+    return true;
+  }
 }
 
 async function saveVenueToken(venueId, accessToken, refreshToken, expiresIn) {
@@ -796,27 +903,47 @@ app.get('/api/debug', async (req, res) => {
 
 app.get('/api/search', async (req, res) => {
   try {
-    const { q } = req.query;
+    const { q, venueId } = req.query;
     if (!q) return res.json({ tracks: [] });
     const token = await getSpotifyToken();
     if (!token) return res.json({ tracks: [], error: 'No Spotify token' });
-    const r = await fetch(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=8&market=DE`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    const data = await r.json();
-    if (!data.tracks) return res.json({ tracks: [], error: 'Spotify API error' });
-    const tracks = data.tracks.items.map(t => ({
+    const settings = venueId ? await getVenueSettings(venueId) : cleanSettings({});
+    const filtering = settings.blockExplicit || settings.blockedGenres.length > 0;
+
+    // Spotify caps search at 10 results per call. When the bar filters songs out,
+    // grab a second page so patrons still see a decent list.
+    const fetchPage = async (offset) => {
+      const r = await fetch(
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${offset}&market=DE`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await r.json();
+      return (data.tracks && data.tracks.items) || null;
+    };
+    const pages = await Promise.all(filtering ? [fetchPage(0), fetchPage(10)] : [fetchPage(0)]);
+    if (!pages[0]) return res.json({ tracks: [], error: 'Spotify API error' });
+    const items = pages.flat().filter(Boolean);
+
+    let tracks = items.map(t => ({
       id: t.id,
       name: t.name,
       artist: t.artists.map(a => a.name).join(', '),
+      artistId: t.artists[0] && t.artists[0].id,
+      explicit: !!t.explicit,
       album: t.album.name,
       image: t.album.images[1]?.url || t.album.images[0]?.url,
       duration_ms: t.duration_ms,
       uri: t.uri,
       preview_url: t.preview_url
     }));
-    res.json({ tracks });
+
+    let hidden = 0;
+    if (filtering) {
+      const allowed = await Promise.all(tracks.map(t => trackAllowed(t, settings)));
+      hidden = allowed.filter(a => !a).length;
+      tracks = tracks.filter((t, i) => allowed[i]);
+    }
+    res.json({ tracks: tracks.slice(0, 10), hidden });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -825,6 +952,9 @@ app.get('/api/search', async (req, res) => {
 app.post('/api/create-payment', async (req, res) => {
   try {
     const { trackId, trackName, artist, image, uri, price = 99, venueId = 'default' } = req.body;
+    if (!(await uriAllowedForVenue(venueId, uri))) {
+      return res.status(400).json({ error: 'blocked', blocked: true });
+    }
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [{
