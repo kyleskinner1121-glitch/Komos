@@ -370,6 +370,7 @@ const T = {
     searchPlaceholder: 'Search artist or song...',
     resultsLabel: 'Results',
     noResults: 'No results found.\nTry a different search.',
+    songBlocked: "This bar isn't taking requests for that song.",
     cancel: 'Cancel',
     useCredit: 'USE 1 CREDIT — PLAY THIS SONG',
     pay: 'PAY €0.99 — PLAY THIS SONG',
@@ -414,6 +415,7 @@ const T = {
     searchPlaceholder: 'Busca artista o canción...',
     resultsLabel: 'Resultados',
     noResults: 'Sin resultados.\nIntenta otra búsqueda.',
+    songBlocked: 'Este bar no acepta peticiones de esa canción.',
     cancel: 'Cancelar',
     useCredit: 'USAR 1 CRÉDITO — PONER ESTA CANCIÓN',
     pay: 'PAGAR €0.99 — PONER ESTA CANCIÓN',
@@ -458,6 +460,7 @@ const T = {
     searchPlaceholder: 'Zoek artiest of nummer...',
     resultsLabel: 'Resultaten',
     noResults: 'Geen resultaten gevonden.\nProbeer een andere zoekopdracht.',
+    songBlocked: 'Deze bar accepteert geen verzoeken voor dat nummer.',
     cancel: 'Annuleren',
     useCredit: 'GEBRUIK 1 TEGOED — SPEEL DIT NUMMER',
     pay: 'BETAAL €0,99 — SPEEL DIT NUMMER',
@@ -502,6 +505,7 @@ const T = {
     searchPlaceholder: 'Cherche un artiste ou un morceau...',
     resultsLabel: 'Résultats',
     noResults: 'Aucun résultat.\nEssaie une autre recherche.',
+    songBlocked: "Ce bar n'accepte pas de demandes pour ce morceau.",
     cancel: 'Annuler',
     useCredit: 'UTILISER 1 CRÉDIT — JOUER CE MORCEAU',
     pay: 'PAYER 0,99 € — JOUER CE MORCEAU',
@@ -730,7 +734,7 @@ document.getElementById('searchInput').addEventListener('input', function() {
 async function search(q) {
   showLoading();
   try {
-    const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    const r = await fetch(`/api/search?q=${encodeURIComponent(q)}&venueId=${encodeURIComponent(VENUE_ID)}`);
     const data = await r.json();
     renderTracks(data.tracks || []);
   } catch(e) { showError(); }
@@ -822,7 +826,7 @@ async function useCredit() {
       showToast(t('addedToast', data.creditsRemaining));
       loadQueue();
     } else {
-      showToast(data.error || 'Failed to use credit');
+      showToast(data.blocked ? t('songBlocked') : (data.error || 'Failed to use credit'));
       btn.textContent = t('useCredit');
       btn.style.pointerEvents = 'auto';
     }
@@ -853,7 +857,10 @@ async function confirmPay() {
       })
     });
     const data = await r.json();
-    if (data.url) window.location.href = data.url;
+    if (data.url) { window.location.href = data.url; return; }
+    showToast(data.blocked ? t('songBlocked') : 'Payment failed. Try again.');
+    btn.textContent = t('pay');
+    btn.style.pointerEvents = 'auto';
   } catch(e) {
     showToast('Payment failed. Try again.');
     btn.textContent = t('pay');
