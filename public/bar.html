@@ -986,45 +986,27 @@
           <div class="settings-row-sub" data-en="Songs marked explicit on Spotify won't appear in search results" data-es="Las canciones marcadas como explícitas en Spotify no aparecerán en los resultados">Songs marked explicit on Spotify won't appear in search results</div>
         </div>
         <label class="mini-toggle">
-          <input type="checkbox" id="filter-explicit" checked>
-          <span class="mini-slider"></span>
-        </label>
-      </div>
-
-      <div class="settings-row">
-        <div class="settings-row-info">
-          <div class="settings-row-label" data-en="Genre filtering" data-es="Filtrado por género">Genre filtering</div>
-          <div class="settings-row-sub" data-en="Limit requests to specific genres only" data-es="Limitar las solicitudes a géneros específicos">Limit requests to specific genres only</div>
-        </div>
-        <label class="mini-toggle">
-          <input type="checkbox" id="filter-genre-enabled" onchange="toggleGenreSection()">
+          <input type="checkbox" id="filter-explicit">
           <span class="mini-slider"></span>
         </label>
       </div>
     </div>
 
-    <div class="settings-section" id="genre-section" style="opacity:0.4;pointer-events:none;">
-      <div class="settings-section-title" data-en="Allowed genres" data-es="Géneros permitidos">Allowed genres</div>
-      <div class="settings-section-desc" data-en="Tap a genre to allow or block it. Blocked genres won't appear in patron search results." data-es="Toca un género para permitirlo o bloquearlo. Los géneros bloqueados no aparecerán en los resultados de búsqueda.">Tap a genre to allow or block it. Blocked genres won't appear in patron search results.</div>
+    <div class="settings-section" id="genre-section">
+      <div class="settings-section-title" data-en="Blocked genres" data-es="Géneros bloqueados">Blocked genres</div>
+      <div class="settings-section-desc" data-en="Tap a genre to block it. Songs by artists in blocked genres won't appear in patron search results." data-es="Toca un género para bloquearlo. Las canciones de artistas de géneros bloqueados no aparecerán en los resultados de búsqueda.">Tap a genre to block it. Songs by artists in blocked genres won't appear in patron search results.</div>
 
       <div class="genre-legend">
-        <div class="genre-legend-item"><div class="legend-dot allowed"></div> <span data-en="Allowed" data-es="Permitido">Allowed</span></div>
+        <div class="genre-legend-item"><div class="legend-dot neutral"></div> <span data-en="Allowed" data-es="Permitido">Allowed</span></div>
         <div class="genre-legend-item"><div class="legend-dot blocked"></div> <span data-en="Blocked" data-es="Bloqueado">Blocked</span></div>
-        <div class="genre-legend-item"><div class="legend-dot neutral"></div> <span data-en="Not configured" data-es="Sin configurar">Not configured</span></div>
       </div>
 
       <div class="genre-grid" id="genre-grid"></div>
     </div>
 
-    <div class="settings-section">
-      <div class="settings-section-title" data-en="Song language" data-es="Idioma de canciones">Song language</div>
-      <div class="settings-section-desc" data-en="Choose which languages patrons can request music in." data-es="Elige en qué idiomas pueden solicitar música los clientes.">Choose which languages patrons can request music in.</div>
-      <div class="lang-grid" id="lang-grid"></div>
-    </div>
-
     <div class="settings-save-row">
       <div class="save-confirm" id="save-confirm">✓ <span data-en="Settings saved" data-es="Ajustes guardados">Settings saved</span></div>
-      <button class="btn-save" onclick="saveSettings()" data-en="Save changes" data-es="Guardar cambios">Save changes</button>
+      <button class="btn-save" id="btn-save-settings" onclick="saveSettings()" data-en="Save changes" data-es="Guardar cambios">Save changes</button>
     </div>
   </div>
 
@@ -1055,23 +1037,9 @@
     { id: 'punk',       label: 'Punk' },
   ];
 
-  const LANGUAGES = [
-    { id: 'en', label: 'English',    flag: '🇬🇧' },
-    { id: 'es', label: 'Spanish',    flag: '🇪🇸' },
-    { id: 'de', label: 'German',     flag: '🇩🇪' },
-    { id: 'fr', label: 'French',     flag: '🇫🇷' },
-    { id: 'nl', label: 'Dutch',      flag: '🇳🇱' },
-    { id: 'pt', label: 'Portuguese', flag: '🇵🇹' },
-    { id: 'it', label: 'Italian',    flag: '🇮🇹' },
-    { id: 'tr', label: 'Turkish',    flag: '🇹🇷' },
-    { id: 'ar', label: 'Arabic',     flag: '🇸🇦' },
-  ];
-
   const genreState = {};
   GENRES.forEach(g => { genreState[g.id] = 'neutral'; });
 
-  const langState = {};
-  LANGUAGES.forEach(l => { langState[l.id] = true; });
 
   // ── UI language ──
   function applyLang() {
@@ -1089,41 +1057,50 @@
 
   function buildSettingsUI() {
     document.getElementById('genre-grid').innerHTML = GENRES.map(g =>
-      `<div class="genre-chip" id="chip-${g.id}" onclick="cycleGenre('${g.id}')">${g.label}</div>`
-    ).join('');
-
-    document.getElementById('lang-grid').innerHTML = LANGUAGES.map(l =>
-      `<div class="lang-chip on" id="lang-${l.id}" onclick="toggleLangFilter('${l.id}')">
-        <span class="flag">${l.flag}</span>
-        <span>${l.label}</span>
-        <span class="check">✓</span>
-      </div>`
+      `<div class="genre-chip" id="chip-${g.id}" onclick="toggleGenre('${g.id}')">${g.label}</div>`
     ).join('');
   }
 
-  function cycleGenre(id) {
-    const states = ['neutral', 'allowed', 'blocked'];
-    genreState[id] = states[(states.indexOf(genreState[id]) + 1) % states.length];
-    const chip = document.getElementById(`chip-${id}`);
-    chip.className = 'genre-chip ' + (genreState[id] !== 'neutral' ? genreState[id] : '');
+  function toggleGenre(id) {
+    genreState[id] = genreState[id] === 'blocked' ? 'neutral' : 'blocked';
+    document.getElementById(`chip-${id}`).className = 'genre-chip ' + (genreState[id] === 'blocked' ? 'blocked' : '');
   }
 
-  function toggleLangFilter(id) {
-    langState[id] = !langState[id];
-    document.getElementById(`lang-${id}`).className = 'lang-chip ' + (langState[id] ? 'on' : 'off');
+  // Load this bar's saved settings into the tab
+  async function loadSettings() {
+    try {
+      const res = await fetch('/api/venue/settings');
+      if (!res.ok) return;
+      const { settings } = await res.json();
+      document.getElementById('filter-explicit').checked = !!settings.blockExplicit;
+      GENRES.forEach(g => {
+        genreState[g.id] = settings.blockedGenres.includes(g.id) ? 'blocked' : 'neutral';
+        const chip = document.getElementById(`chip-${g.id}`);
+        if (chip) chip.className = 'genre-chip ' + (genreState[g.id] === 'blocked' ? 'blocked' : '');
+      });
+    } catch (e) {}
   }
 
-  function toggleGenreSection() {
-    const enabled = document.getElementById('filter-genre-enabled').checked;
-    const section = document.getElementById('genre-section');
-    section.style.opacity = enabled ? '1' : '0.4';
-    section.style.pointerEvents = enabled ? 'auto' : 'none';
-  }
-
-  function saveSettings() {
-    const el = document.getElementById('save-confirm');
-    el.classList.add('show');
-    setTimeout(() => el.classList.remove('show'), 2500);
+  async function saveSettings() {
+    const btn = document.getElementById('btn-save-settings');
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/venue/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          blockExplicit: document.getElementById('filter-explicit').checked,
+          blockedGenres: GENRES.filter(g => genreState[g.id] === 'blocked').map(g => g.id)
+        })
+      });
+      if (!res.ok) throw new Error();
+      const el = document.getElementById('save-confirm');
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 2500);
+    } catch (e) {
+      alert(currentLang === 'es' ? 'No se pudieron guardar los ajustes. Inténtalo de nuevo.' : "Couldn't save settings. Please try again.");
+    }
+    btn.disabled = false;
   }
 
   async function init() {
@@ -1172,6 +1149,7 @@
     }
 
     buildSettingsUI();
+    loadSettings();
     applyLang();
     loadQueue();
     loadRevenue();
