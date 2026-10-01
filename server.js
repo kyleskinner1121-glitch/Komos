@@ -250,6 +250,16 @@ app.post('/api/venue/toggle', requireVenueAuth, async (req, res) => {
   }
 });
 
+// Is the bar's jukebox switched on? Unknown venues count as on (same as /api/venue/active).
+async function venueIsActive(venueId) {
+  try {
+    const r = await pool.query('SELECT is_active FROM venues WHERE venue_id = $1', [venueId]);
+    return !r.rows.length || r.rows[0].is_active;
+  } catch (e) {
+    return true;
+  }
+}
+
 // ── VENUE MUSIC SETTINGS ──
 app.get('/api/venue/settings', requireVenueAuth, async (req, res) => {
   res.json({ settings: await getVenueSettings(req.session.venueId) });
@@ -501,6 +511,9 @@ app.post('/api/queue/use-credit', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
   const { track_id, track_name, artist, image, uri, venue_id = 'default' } = req.body;
   try {
+    if (!(await venueIsActive(venue_id))) {
+      return res.status(400).json({ error: 'off', off: true });
+    }
     if (!(await uriAllowedForVenue(venue_id, uri))) {
       return res.status(400).json({ error: 'blocked', blocked: true });
     }
@@ -952,6 +965,9 @@ app.get('/api/search', async (req, res) => {
 app.post('/api/create-payment', async (req, res) => {
   try {
     const { trackId, trackName, artist, image, uri, price = 99, venueId = 'default' } = req.body;
+    if (!(await venueIsActive(venueId))) {
+      return res.status(400).json({ error: 'off', off: true });
+    }
     if (!(await uriAllowedForVenue(venueId, uri))) {
       return res.status(400).json({ error: 'blocked', blocked: true });
     }
