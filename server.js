@@ -1,4 +1,4 @@
-// v6
+// v7
 require('dotenv').config();
 const express = require('express');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -38,14 +38,41 @@ app.use(session({
 }));
 
 // Returns true the first time a Stripe session is claimed, false on every repeat.
-async function claimPayment(sessionId, kind) {
+// Also records what was paid, at which bar, from which QR, and test vs live — for the team dashboard.
+async function claimPayment(sessionId, kind, stripeSession) {
+  const s = stripeSession || {};
+  const m = s.metadata || {};
   try {
-    await pool.query('INSERT INTO processed_payments (session_id, kind) VALUES ($1, $2)', [sessionId, kind]);
-    return true;
+    await pool.query(
+      'INSERT INTO processed_payments (session_id, kind, amount, venue_id, src, livemode) VALUES ($1, $2, $3, $4, $5, $6)',
+      [sessionId, kind, s.amount_total ?? null, m.venueId || null, m.src || null, stripeSession ? !!s.livemode : null]
+    );
   } catch (e) {
     if (e.code === '23505' || /duplicate|unique/i.test(e.message)) return false; // already claimed
     throw e;
   }
+  recordStripeFee(sessionId, s); // best-effort, doesn't block the patron
+  return true;
+}
+
+// Looks up the real Stripe fee for a payment and stores it. Never throws.
+async function recordStripeFee(sessionId, s) {
+  try {
+    if (!s || !s.payment_intent) return;
+    const piId = typeof s.payment_intent === 'string' ? s.payment_intent : s.payment_intent.id;
+    const pi = await stripe.paymentIntents.retrieve(piId, { expand: ['latest_charge.balance_transaction'] });
+    const bt = pi && pi.latest_charge && pi.latest_charge.balance_transaction;
+    if (bt && typeof bt.fee === 'number') {
+      await pool.query('UPDATE processed_payments SET stripe_fee = $1 WHERE session_id = $2', [bt.fee, sessionId]);
+    }
+  } catch (e) {
+    console.error('[stats] Stripe fee lookup failed:', e.message);
+  }
+}
+
+// QR source tag from the URL (?src=poster) — letters, numbers, - and _ only
+function cleanSrc(src) {
+  return String(src || '').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 40) || null;
 }
 
 async function initDB() {
@@ -125,6 +152,32 @@ async function initDB() {
     // Bar music settings (explicit filter, blocked genres). ADD COLUMN IF NOT EXISTS
     // means this runs safely on every start — no manual migration needed.
     await pool.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'::jsonb`);
+    // Team dashboard: payment details, page visits, and bar payouts. All safe to re-run on every start.
+    await pool.query(`ALTER TABLE processed_payments
+      ADD COLUMN IF NOT EXISTS amount INTEGER,
+      ADD COLUMN IF NOT EXISTS venue_id VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS src VARCHAR(64),
+      ADD COLUMN IF NOT EXISTS livemode BOOLEAN,
+      ADD COLUMN IF NOT EXISTS stripe_fee INTEGER`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS page_visits (
+        id SERIAL PRIMARY KEY,
+        venue_id VARCHAR(255),
+        src VARCHAR(64),
+        visitor_id VARCHAR(64),
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS page_visits_venue_time ON page_visits (venue_id, created_at)`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS venue_payouts (
+        id SERIAL PRIMARY KEY,
+        venue_id VARCHAR(255) NOT NULL,
+        amount INTEGER NOT NULL,
+        note TEXT,
+        paid_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
     console.log('Database initialized');
   } catch (e) {
     console.error('DB init error:', e);
@@ -424,6 +477,169 @@ app.post('/api/admin/create-venue', async (req, res) => {
   }
 });
 
+// ── PAGE VISIT TRACKING (patron app opens) ──
+app.post('/api/track/visit', async (req, res) => {
+  const { venueId, src, visitorId } = req.body || {};
+  if (!venueId) return res.json({ ok: false });
+  try {
+    await pool.query(
+      'INSERT INTO page_visits (venue_id, src, visitor_id) VALUES ($1, $2, $3)',
+      [String(venueId).slice(0, 255), cleanSrc(src), String(visitorId || '').slice(0, 64) || null]
+    );
+  } catch (e) {
+    console.error('[stats] visit log failed:', e.message);
+  }
+  res.json({ ok: true });
+});
+
+// ── ADMIN: TEAM DASHBOARD ──
+const BAR_SHARE = 0.75;                      // bar's cut of each payment
+const TEST_VENUES = ['demo', 'default'];     // hidden unless "include demo" is on
+
+function isAdmin(req) {
+  const key = req.get('x-admin-key') || req.query.adminKey || (req.body && req.body.adminKey);
+  return !!process.env.ADMIN_KEY && key === process.env.ADMIN_KEY;
+}
+
+app.get('/api/admin/stats', async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Unauthorized' });
+  const days = { '24h': 1, '7d': 7, '30d': 30 }[req.query.range] || null; // null = all time
+  const liveOnly = req.query.liveOnly === 'true';
+  const includeDemo = req.query.includeDemo === 'true';
+  // Shared filters: $1 days, $2 liveOnly, $3 includeDemo, $4 test venue ids
+  // Payment queries: $1 days, $2 liveOnly, $3 includeDemo, $4 test venue ids
+  const params = [days, liveOnly, includeDemo, TEST_VENUES];
+  // Activity queries (songs, visits): $1 days, $2 includeDemo, $3 test venue ids
+  const aParams = [days, includeDemo, TEST_VENUES];
+  const inRange = (col) => `($1::int IS NULL OR ${col} >= NOW() - ($1::int * INTERVAL '1 day'))`;
+  const venueOk = (col) => `($3::boolean OR COALESCE(${col}, '') <> ALL($4::text[]))`;
+  const aVenueOk = (col) => `($2::boolean OR COALESCE(${col}, '') <> ALL($3::text[]))`;
+  const payWhere = `${inRange('p.created_at')} AND ($2::boolean = false OR p.livemode = true) AND ${venueOk('p.venue_id')}`;
+  // Stripe fee: real when known, otherwise estimated at the standard EU card rate (1.5% + €0.25)
+  const feeExpr = `COALESCE(p.stripe_fee, ROUND(p.amount * 0.015) + 25)`;
+  try {
+    const q = (sql, ps = params) => pool.query(sql, ps).then(r => r.rows);
+    const [
+      totals, payByVenue, songsByVenue, visitsByVenue, venues, owedRows,
+      nightly, bySrcVisits, bySrcPays, recentSongs, topSongs, apps, payouts, modeCounts
+    ] = await Promise.all([
+      q(`SELECT COUNT(*)::int AS payments,
+                COALESCE(SUM(p.amount), 0)::int AS revenue,
+                COALESCE(SUM(${feeExpr}), 0)::int AS fees,
+                COUNT(*) FILTER (WHERE p.stripe_fee IS NULL)::int AS fees_estimated,
+                COUNT(*) FILTER (WHERE p.kind = 'bundle')::int AS bundles
+         FROM processed_payments p WHERE p.amount IS NOT NULL AND ${payWhere}`),
+      q(`SELECT p.venue_id, COUNT(*)::int AS payments, COALESCE(SUM(p.amount), 0)::int AS revenue,
+                COALESCE(SUM(${feeExpr}), 0)::int AS fees
+         FROM processed_payments p WHERE p.amount IS NOT NULL AND ${payWhere} GROUP BY p.venue_id`),
+      q(`SELECT s.venue_id, COUNT(*)::int AS songs, MAX(s.added_at) AS last_song
+         FROM songs s WHERE ${inRange('s.added_at')} AND ${aVenueOk('s.venue_id')} GROUP BY s.venue_id`, aParams),
+      q(`SELECT v.venue_id, COUNT(*)::int AS visits, COUNT(DISTINCT v.visitor_id)::int AS visitors
+         FROM page_visits v WHERE ${inRange('v.created_at')} AND ${aVenueOk('v.venue_id')} GROUP BY v.venue_id`, aParams),
+      q(`SELECT v.venue_id, v.name, v.city, v.is_active, v.created_at,
+                (t.venue_id IS NOT NULL) AS spotify_connected
+         FROM venues v LEFT JOIN venue_tokens t ON t.venue_id = v.venue_id ORDER BY v.created_at`, []),
+      // What each bar is owed: always live payments only, all time, minus payouts already made
+      q(`SELECT x.venue_id, x.live_revenue, COALESCE(po.paid, 0)::int AS paid_out
+         FROM (SELECT venue_id, SUM(amount)::int AS live_revenue FROM processed_payments
+               WHERE livemode = true AND amount IS NOT NULL GROUP BY venue_id) x
+         LEFT JOIN (SELECT venue_id, SUM(amount) AS paid FROM venue_payouts GROUP BY venue_id) po
+           ON po.venue_id = x.venue_id`, []),
+      // Last 30 nights, Madrid time, with a 6am cutoff so 1am sales count as the night before
+      q(`SELECT to_char((p.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Madrid' - INTERVAL '6 hours')::date, 'YYYY-MM-DD') AS night,
+                COUNT(*)::int AS payments, COALESCE(SUM(p.amount), 0)::int AS revenue
+         FROM processed_payments p
+         WHERE p.amount IS NOT NULL AND p.created_at >= NOW() - INTERVAL '31 days'
+           AND ($1::boolean = false OR p.livemode = true) AND ($2::boolean OR COALESCE(p.venue_id, '') <> ALL($3::text[]))
+         GROUP BY 1 ORDER BY 1`, [liveOnly, includeDemo, TEST_VENUES]),
+      q(`SELECT COALESCE(v.src, '(no tag)') AS src, COUNT(*)::int AS visits, COUNT(DISTINCT v.visitor_id)::int AS visitors
+         FROM page_visits v WHERE ${inRange('v.created_at')} AND ${aVenueOk('v.venue_id')} GROUP BY 1`, aParams),
+      q(`SELECT COALESCE(NULLIF(p.src, ''), '(no tag)') AS src, COUNT(*)::int AS payments, COALESCE(SUM(p.amount), 0)::int AS revenue
+         FROM processed_payments p WHERE p.amount IS NOT NULL AND ${payWhere} GROUP BY 1`),
+      q(`SELECT s.name, s.artist, s.image, s.venue_id, s.added_at, s.status
+         FROM songs s WHERE ($1::boolean OR COALESCE(s.venue_id, '') <> ALL($2::text[])) ORDER BY s.added_at DESC LIMIT 25`,
+        [includeDemo, TEST_VENUES]),
+      q(`SELECT s.name, s.artist, s.image, COUNT(*)::int AS plays
+         FROM songs s WHERE ${inRange('s.added_at')} AND ${aVenueOk('s.venue_id')}
+         GROUP BY s.name, s.artist, s.image ORDER BY plays DESC, MAX(s.added_at) DESC LIMIT 10`, aParams),
+      q(`SELECT id, venue_name, city, contact_name, email, status, created_at
+         FROM venue_applications ORDER BY created_at DESC LIMIT 8`, []),
+      q(`SELECT venue_id, amount, note, paid_at FROM venue_payouts ORDER BY paid_at DESC LIMIT 20`, []),
+      q(`SELECT COUNT(*) FILTER (WHERE livemode = true)::int AS live,
+                COUNT(*) FILTER (WHERE livemode IS NOT TRUE)::int AS test
+         FROM processed_payments WHERE amount IS NOT NULL`, [])
+    ]);
+
+    const t = totals[0];
+    const barShare = Math.round(t.revenue * BAR_SHARE);
+
+    // One row per bar: every registered venue, plus any venue id that has activity but no account (e.g. demo)
+    const byId = {};
+    const row = (id) => byId[id] || (byId[id] = {
+      venue_id: id, name: null, is_active: null, spotify_connected: false,
+      payments: 0, revenue: 0, fees: 0, songs: 0, last_song: null, visits: 0, visitors: 0,
+      live_revenue: 0, paid_out: 0
+    });
+    venues.forEach(v => {
+      if (!includeDemo && TEST_VENUES.includes(v.venue_id)) return;
+      Object.assign(row(v.venue_id), { name: v.name, city: v.city, is_active: v.is_active, spotify_connected: v.spotify_connected, created_at: v.created_at });
+    });
+    payByVenue.forEach(r => { if (r.venue_id) Object.assign(row(r.venue_id), { payments: r.payments, revenue: r.revenue, fees: r.fees }); });
+    songsByVenue.forEach(r => { if (r.venue_id) Object.assign(row(r.venue_id), { songs: r.songs, last_song: r.last_song }); });
+    visitsByVenue.forEach(r => { if (r.venue_id) Object.assign(row(r.venue_id), { visits: r.visits, visitors: r.visitors }); });
+    owedRows.forEach(r => {
+      if (!r.venue_id || (!includeDemo && TEST_VENUES.includes(r.venue_id))) return;
+      Object.assign(row(r.venue_id), { live_revenue: r.live_revenue, paid_out: r.paid_out });
+    });
+    const bars = Object.values(byId).map(b => ({
+      ...b,
+      bar_share: Math.round(b.revenue * BAR_SHARE),
+      owed: Math.max(0, Math.round(b.live_revenue * BAR_SHARE) - b.paid_out)
+    })).sort((a, b) => b.revenue - a.revenue || b.songs - a.songs);
+
+    // QR sources: merge visits and payments on the tag
+    const src = {};
+    bySrcVisits.forEach(r => { src[r.src] = { src: r.src, visits: r.visits, visitors: r.visitors, payments: 0, revenue: 0 }; });
+    bySrcPays.forEach(r => { src[r.src] = Object.assign(src[r.src] || { src: r.src, visits: 0, visitors: 0 }, { payments: r.payments, revenue: r.revenue }); });
+
+    const visitors = visitsByVenue.reduce((n, r) => n + r.visitors, 0);
+    const songs = songsByVenue.reduce((n, r) => n + r.songs, 0);
+    res.json({
+      generatedAt: new Date().toISOString(),
+      filters: { range: req.query.range || 'all', liveOnly, includeDemo },
+      barSharePct: BAR_SHARE * 100,
+      totals: {
+        revenue: t.revenue, payments: t.payments, bundles: t.bundles, songs, visitors,
+        barShare, fees: t.fees, feesEstimated: t.fees_estimated,
+        zorosNet: t.revenue - barShare - t.fees,
+        owedNow: bars.reduce((n, b) => n + b.owed, 0)
+      },
+      paymentModes: modeCounts[0],
+      bars,
+      nightly,
+      sources: Object.values(src).sort((a, b) => b.revenue - a.revenue || b.visitors - a.visitors),
+      recentSongs, topSongs, applications: apps, payouts
+    });
+  } catch (e) {
+    console.error('[stats] error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Record that a bar has been paid (amount in cents)
+app.post('/api/admin/payout', async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Unauthorized' });
+  const { venueId, amount, note } = req.body || {};
+  const cents = parseInt(amount, 10);
+  if (!venueId || !Number.isFinite(cents) || cents <= 0) return res.status(400).json({ error: 'Need a bar and an amount' });
+  try {
+    await pool.query('INSERT INTO venue_payouts (venue_id, amount, note) VALUES ($1, $2, $3)', [venueId, cents, note ? String(note).slice(0, 300) : null]);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── ADMIN: RUN OUTREACH AGENT ──
 // Manual trigger for testing. Query params:
 //   adminKey  (required) — same ADMIN_KEY as the other admin endpoints
@@ -450,7 +666,7 @@ app.post('/api/create-bundle-payment', async (req, res) => {
     five: { credits: 5, price: 399, label: '5 Songs' },
     ten: { credits: 10, price: 599, label: '10 Songs' }
   };
-  const { bundleType, venueId = 'default' } = req.body;
+  const { bundleType, venueId = 'default', src } = req.body;
   const bundle = bundles[bundleType];
   if (!bundle) return res.status(400).json({ error: 'Invalid bundle' });
   try {
@@ -468,7 +684,7 @@ app.post('/api/create-bundle-payment', async (req, res) => {
         quantity: 1
       }],
       mode: 'payment',
-      metadata: { bundleType, userId: String(req.session.userId) },
+      metadata: { bundleType, userId: String(req.session.userId), venueId: String(venueId), src: cleanSrc(src) || '' },
       success_url: `${process.env.BASE_URL}/bundle-success?session_id={CHECKOUT_SESSION_ID}&bundle=${bundleType}&venue_id=${venueId}`,
       cancel_url: `${process.env.BASE_URL}?venue=${venueId}`
     });
@@ -492,7 +708,7 @@ app.post('/api/bundle/confirm', async (req, res) => {
     const credits = bundles[meta.bundleType];
     if (!credits) return res.status(400).json({ error: 'Invalid bundle' });
     if (meta.userId && meta.userId !== String(req.session.userId)) return res.status(403).json({ error: 'Payment belongs to another account' });
-    if (!(await claimPayment(session_id, 'bundle'))) {
+    if (!(await claimPayment(session_id, 'bundle', stripeSession))) {
       const cur = await pool.query('SELECT credits FROM users WHERE id = $1', [req.session.userId]);
       return res.json({ success: true, alreadyProcessed: true, credits: cur.rows[0]?.credits ?? 0 });
     }
@@ -964,7 +1180,7 @@ app.get('/api/search', async (req, res) => {
 
 app.post('/api/create-payment', async (req, res) => {
   try {
-    const { trackId, trackName, artist, image, uri, price = 99, venueId = 'default' } = req.body;
+    const { trackId, trackName, artist, image, uri, price = 99, venueId = 'default', src } = req.body;
     if (!(await venueIsActive(venueId))) {
       return res.status(400).json({ error: 'off', off: true });
     }
@@ -992,7 +1208,8 @@ app.post('/api/create-payment', async (req, res) => {
         artist: String(artist || '').slice(0, 480),
         image: String(image || '').slice(0, 480),
         uri: String(uri || ''),
-        venueId: String(venueId)
+        venueId: String(venueId),
+        src: cleanSrc(src) || ''
       },
       success_url: `${process.env.BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}&track_id=${trackId}&track_name=${encodeURIComponent(trackName)}&artist=${encodeURIComponent(artist)}&image=${encodeURIComponent(image || '')}&uri=${encodeURIComponent(uri)}&venue_id=${venueId}`,
       cancel_url: `${process.env.BASE_URL}?venue=${venueId}`
@@ -1027,7 +1244,7 @@ app.post('/api/queue/add', async (req, res) => {
     )).rows[0].count);
 
     // Already honored this payment (e.g. patron refreshed the success page) — don't queue again
-    if (!(await claimPayment(session_id, 'song'))) {
+    if (!(await claimPayment(session_id, 'song', stripeSession))) {
       return res.json({ success: true, alreadyProcessed: true, position: await countQueued() });
     }
 
@@ -1093,6 +1310,7 @@ app.get('/bundle-success', (req, res) => res.sendFile(path.join(__dirname, 'publ
 app.get('/bar', (req, res) => res.sendFile(path.join(__dirname, 'public', 'bar.html')));
 app.get('/setup', (req, res) => res.sendFile(path.join(__dirname, 'public', 'setup.html')));
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
+app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Zoros running on port ${PORT}`));
