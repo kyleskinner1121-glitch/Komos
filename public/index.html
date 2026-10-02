@@ -328,6 +328,33 @@
 <script>
 const PRICE = 99;
 const VENUE_ID = new URLSearchParams(window.location.search).get('venue') || 'default';
+
+// ── VISIT TRACKING (team dashboard) ──
+// SRC = which QR the patron scanned (?src=poster). Remembered for this visit so it
+// survives a cancelled Stripe checkout, which returns without the tag.
+const SRC = (() => {
+  const key = 'zoros_src_' + VENUE_ID;
+  let v = new URLSearchParams(window.location.search).get('src');
+  try {
+    if (v) sessionStorage.setItem(key, v); else v = sessionStorage.getItem(key);
+  } catch (e) {}
+  return v || '';
+})();
+(function logVisit() {
+  let visitorId = '';
+  try {
+    visitorId = localStorage.getItem('zoros_vid') || '';
+    if (!visitorId) {
+      visitorId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem('zoros_vid', visitorId);
+    }
+  } catch (e) {}
+  fetch('/api/track/visit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ venueId: VENUE_ID, src: SRC, visitorId })
+  }).catch(() => {});
+})();
 let selectedTrack = null;
 let currentUser = null;
 let lang = 'en';
@@ -753,7 +780,7 @@ async function confirmBuyBundle() {
     const r = await fetch('/api/create-bundle-payment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bundleType: pendingBundleType, venueId: VENUE_ID })
+      body: JSON.stringify({ bundleType: pendingBundleType, venueId: VENUE_ID, src: SRC })
     });
     const data = await r.json();
     if (data.url) window.location.href = data.url;
@@ -902,7 +929,8 @@ async function confirmPay() {
         image: selectedTrack.image,
         uri: selectedTrack.uri,
         price: PRICE,
-        venueId: VENUE_ID
+        venueId: VENUE_ID,
+        src: SRC
       })
     });
     const data = await r.json();
