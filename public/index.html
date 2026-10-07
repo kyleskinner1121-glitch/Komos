@@ -412,6 +412,7 @@ const T = {
     resultsLabel: 'Results',
     noResults: 'No results found.\nTry a different search.',
     songBlocked: "This bar isn't taking requests for that song.",
+    notPlaying: "The bar's music isn't playing right now. Try again once it's back on. You haven't been charged.",
     cancel: 'Cancel',
     useCredit: 'USE 1 CREDIT — PLAY THIS SONG',
     pay: 'PAY €0.99 — PLAY THIS SONG',
@@ -457,6 +458,7 @@ const T = {
     resultsLabel: 'Resultados',
     noResults: 'Sin resultados.\nIntenta otra búsqueda.',
     songBlocked: 'Este bar no acepta peticiones de esa canción.',
+    notPlaying: 'La música del bar no está sonando ahora mismo. Inténtalo cuando vuelva. No se te ha cobrado nada.',
     cancel: 'Cancelar',
     useCredit: 'USAR 1 CRÉDITO — PONER ESTA CANCIÓN',
     pay: 'PAGAR €0.99 — PONER ESTA CANCIÓN',
@@ -502,6 +504,7 @@ const T = {
     resultsLabel: 'Resultaten',
     noResults: 'Geen resultaten gevonden.\nProbeer een andere zoekopdracht.',
     songBlocked: 'Deze bar accepteert geen verzoeken voor dat nummer.',
+    notPlaying: 'De muziek in de bar speelt nu niet. Probeer het opnieuw zodra die weer aan staat. Er is niets afgeschreven.',
     cancel: 'Annuleren',
     useCredit: 'GEBRUIK 1 TEGOED — SPEEL DIT NUMMER',
     pay: 'BETAAL €0,99 — SPEEL DIT NUMMER',
@@ -547,6 +550,7 @@ const T = {
     resultsLabel: 'Résultats',
     noResults: 'Aucun résultat.\nEssaie une autre recherche.',
     songBlocked: "Ce bar n'accepte pas de demandes pour ce morceau.",
+    notPlaying: "La musique du bar ne joue pas en ce moment. Réessaie quand elle reprend. Tu n'as pas été débité.",
     cancel: 'Annuler',
     useCredit: 'UTILISER 1 CRÉDIT — JOUER CE MORCEAU',
     pay: 'PAYER 0,99 € — JOUER CE MORCEAU',
@@ -902,7 +906,7 @@ async function useCredit() {
       loadQueue();
     } else {
       if (data.off) { setOffScreen(true); return; }
-      showToast(data.blocked ? t('songBlocked') : (data.error || 'Failed to use credit'));
+      showToast(data.notPlaying ? t('notPlaying') : data.blocked ? t('songBlocked') : (data.error || 'Failed to use credit'));
       btn.textContent = t('useCredit');
       btn.style.pointerEvents = 'auto';
     }
@@ -936,7 +940,7 @@ async function confirmPay() {
     const data = await r.json();
     if (data.url) { window.location.href = data.url; return; }
     if (data.off) { setOffScreen(true); btn.textContent = t('pay'); btn.style.pointerEvents = 'auto'; return; }
-    showToast(data.blocked ? t('songBlocked') : 'Payment failed. Try again.');
+    showToast(data.notPlaying ? t('notPlaying') : data.blocked ? t('songBlocked') : 'Payment failed. Try again.');
     btn.textContent = t('pay');
     btn.style.pointerEvents = 'auto';
   } catch(e) {
