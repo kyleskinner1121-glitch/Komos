@@ -1178,9 +1178,12 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
+const SONG_PRICE = 99; // cents, EUR
+
 app.post('/api/create-payment', async (req, res) => {
   try {
-    const { trackId, trackName, artist, image, uri, price = 99, venueId = 'default', src } = req.body;
+    const { trackId, trackName, artist, image, uri, venueId = 'default', src } = req.body;
+    const price = SONG_PRICE; // set server-side so a patron can't edit the request to pay less
     if (!(await venueIsActive(venueId))) {
       return res.status(400).json({ error: 'off', off: true });
     }
