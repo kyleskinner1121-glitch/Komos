@@ -90,14 +90,16 @@
   .logo .wordmark { display: block; width: clamp(96px, calc(100vw - 250px), 150px); height: auto; margin-bottom: 5px; }
   .lang-logo .wordmark { display: block; height: 44px; width: auto; margin: 6px auto 4px; }
   .hero { position: relative; }
-  .hero-credits { position: absolute; right: 20px; top: 8px; }
+  /* Credits sit as far below the header line as the language button sits above it (20px),
+     and the top of the heading's letters lines up with the top of the credits */
+  .hero-credits { position: absolute; right: 20px; top: 20px; }
   @media (max-width: 340px) { .hero-credits { position: static; display: flex; justify-content: flex-end; margin: -12px 0 10px; } }
   .header-right { display: flex; align-items: center; gap: 10px; }
   .queue-pill { background: var(--orange); color: var(--white); font-size: 11px; font-weight: 500; padding: 6px 14px; border-radius: 20px; cursor: pointer; letter-spacing: 0.5px; border: none; }
   .credits-badge { background: rgba(29,185,84,0.2); border: 1px solid rgba(29,185,84,0.4); color: #1db954; font-size: 11px; font-weight: 500; padding: 6px 12px; border-radius: 20px; display: none; cursor: pointer; }
   .queue-count-badge { background: white; color: var(--orange); border-radius: 50%; width: 18px; height: 18px; font-size: 10px; display: inline-flex; align-items: center; justify-content: center; margin-left: 4px; font-weight: 700; }
 
-  .hero { padding: 28px 20px 20px; border-bottom: 1px solid var(--border); background: linear-gradient(160deg, #2D2264 0%, #120E2E 100%); }
+  .hero { padding: calc(20px - 0.034 * clamp(48px, 14vw, 72px)) 20px 20px; border-bottom: 1px solid var(--border); background: linear-gradient(160deg, #2D2264 0%, #120E2E 100%); }
   .hero h1 { font-family: 'Bebas Neue', sans-serif; font-size: clamp(48px, 14vw, 72px); line-height: 0.9; letter-spacing: 2px; color: var(--white); margin-bottom: 10px; }
   .hero h1 em { font-style: normal; color: var(--orange); display: block; }
   .hero p { font-size: 13px; color: var(--muted); font-weight: 300; letter-spacing: 0.5px; margin-bottom: 16px; }
