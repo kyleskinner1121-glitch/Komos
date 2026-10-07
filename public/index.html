@@ -220,20 +220,20 @@
       <div class="bundle-desc" id="txt-1song-desc">Pay per song — no account needed</div>
       <div class="bundle-price">€0.99</div>
     </div>
-    <div class="bundle-card featured" onclick="selectBundle('five')">
+    <div class="bundle-card" onclick="selectBundle('four')">
+      <div class="bundle-songs" id="txt-5songs">4 Songs</div>
+      <div class="bundle-desc" id="txt-5songs-desc">4 song credits · account required</div>
+      <div class="bundle-price">€3.49</div>
+      <div class="bundle-saving" id="txt-5songs-save">Save €0.47 vs single</div>
+    </div>
+    <div class="bundle-card featured" onclick="selectBundle('seven')">
       <div class="featured-badge" id="txt-best-value">Best Value</div>
-      <div class="bundle-songs" id="txt-5songs">5 Songs</div>
-      <div class="bundle-desc" id="txt-5songs-desc">5 song credits · account required</div>
-      <div class="bundle-price">€3.99</div>
-      <div class="bundle-saving" id="txt-5songs-save">Save €1.00 vs single</div>
+      <div class="bundle-songs" id="txt-10songs">7 Songs</div>
+      <div class="bundle-desc" id="txt-10songs-desc">7 song credits · account required</div>
+      <div class="bundle-price">€5.49</div>
+      <div class="bundle-saving" id="txt-10songs-save">Save €1.44 vs single</div>
     </div>
-    <div class="bundle-card" onclick="selectBundle('ten')">
-      <div class="bundle-songs" id="txt-10songs">10 Songs</div>
-      <div class="bundle-desc" id="txt-10songs-desc">10 song credits · account required</div>
-      <div class="bundle-price">€5.99</div>
-      <div class="bundle-saving" id="txt-10songs-save">Save €3.91 vs single</div>
-    </div>
-    <div class="bundle-note" id="txt-bundle-note">5 and 10 song credits are stored in your account and work at any Zoros venue.</div>
+    <div class="bundle-note" id="txt-bundle-note">4 and 7 song credits are stored in your account and work at any Zoros venue.</div>
   </div>
 </div>
 
@@ -275,15 +275,15 @@
       <div class="pricing-price">€0.99</div>
       <div class="pricing-per" id="txt-per-song">per song</div>
     </div>
-    <div class="pricing-card" onclick="onPricingCardClick('five')">
-      <div class="pricing-songs" id="txt-p5songs">5 Songs</div>
-      <div class="pricing-price">€3.99</div>
-      <div class="pricing-save" id="txt-p5save">Save €1.00</div>
+    <div class="pricing-card" onclick="onPricingCardClick('four')">
+      <div class="pricing-songs" id="txt-p5songs">4 Songs</div>
+      <div class="pricing-price">€3.49</div>
+      <div class="pricing-save" id="txt-p5save">Save €0.47</div>
     </div>
-    <div class="pricing-card" onclick="onPricingCardClick('ten')">
-      <div class="pricing-songs" id="txt-p10songs">10 Songs</div>
-      <div class="pricing-price">€5.99</div>
-      <div class="pricing-save" id="txt-p10save">Save €3.91</div>
+    <div class="pricing-card" onclick="onPricingCardClick('seven')">
+      <div class="pricing-songs" id="txt-p10songs">7 Songs</div>
+      <div class="pricing-price">€5.49</div>
+      <div class="pricing-save" id="txt-p10save">Save €1.44</div>
     </div>
   </div>
 </div>
@@ -363,23 +363,23 @@ let pendingBundleType = null;
 const BUNDLES_BY_LANG = {
   en: {
     single: { songs: '1 Song', price: '€0.99', saving: null },
-    five:   { songs: '5 Songs', price: '€3.99', saving: 'Save €1.00' },
-    ten:    { songs: '10 Songs', price: '€5.99', saving: 'Save €3.91' },
+    four:   { songs: '4 Songs', price: '€3.49', saving: 'Save €0.47' },
+    seven:  { songs: '7 Songs', price: '€5.49', saving: 'Save €1.44' },
   },
   es: {
     single: { songs: '1 Canción', price: '€0.99', saving: null },
-    five:   { songs: '5 Canciones', price: '€3.99', saving: 'Ahorra €1.00' },
-    ten:    { songs: '10 Canciones', price: '€5.99', saving: 'Ahorra €3.91' },
+    four:   { songs: '4 Canciones', price: '€3.49', saving: 'Ahorra €0.47' },
+    seven:  { songs: '7 Canciones', price: '€5.49', saving: 'Ahorra €1.44' },
   },
   nl: {
     single: { songs: '1 Nummer', price: '€0,99', saving: null },
-    five:   { songs: '5 Nummers', price: '€3,99', saving: 'Bespaar €1,00' },
-    ten:    { songs: '10 Nummers', price: '€5,99', saving: 'Bespaar €3,91' },
+    four:   { songs: '4 Nummers', price: '€3,49', saving: 'Bespaar €0,47' },
+    seven:  { songs: '7 Nummers', price: '€5,49', saving: 'Bespaar €1,44' },
   },
   fr: {
     single: { songs: '1 Morceau', price: '0,99 €', saving: null },
-    five:   { songs: '5 Morceaux', price: '3,99 €', saving: 'Économise 1,00 €' },
-    ten:    { songs: '10 Morceaux', price: '5,99 €', saving: 'Économise 3,91 €' },
+    four:   { songs: '4 Morceaux', price: '3,49 €', saving: 'Économise 0,47 €' },
+    seven:  { songs: '7 Morceaux', price: '5,49 €', saving: 'Économise 1,44 €' },
   },
 };
 
@@ -390,20 +390,20 @@ const T = {
     heroEm: 'Your music.',
     heroP: 'Search any song · Pay · Hear it in the bar',
     perSong: 'per song',
-    p5save: 'Save €1.00',
-    p10save: 'Save €3.91',
+    p5save: 'Save €0.47',
+    p10save: 'Save €1.44',
     bundleTitle: 'Buy a Bundle',
     bundleSubtitle: 'Save on songs — credits work at any Zoros venue',
     bestValue: 'Best Value',
     oneSong: '1 Song',
     oneSongDesc: 'Pay per song — no account needed',
-    fiveSongs: '5 Songs',
-    fiveSongsDesc: '5 song credits · account required',
-    fiveSave: 'Save €1.00 vs single',
-    tenSongs: '10 Songs',
-    tenSongsDesc: '10 song credits · account required',
-    tenSave: 'Save €3.91 vs single',
-    bundleNote: '5 and 10 song credits are stored in your account and work at any Zoros venue.',
+    fiveSongs: '4 Songs',
+    fiveSongsDesc: '4 song credits · account required',
+    fiveSave: 'Save €0.47 vs single',
+    tenSongs: '7 Songs',
+    tenSongsDesc: '7 song credits · account required',
+    tenSave: 'Save €1.44 vs single',
+    bundleNote: '4 and 7 song credits are stored in your account and work at any Zoros venue.',
     queueBtn: 'Queue',
     upNext: 'Up Next',
     emptyQueue: 'Queue is empty.\nBe the first to request a song.',
@@ -436,19 +436,19 @@ const T = {
     heroEm: 'Tu música.',
     heroP: 'Busca una canción · Paga · Escúchala en el bar',
     perSong: 'por canción',
-    p5save: 'Ahorra €1.00',
-    p10save: 'Ahorra €3.91',
+    p5save: 'Ahorra €0.47',
+    p10save: 'Ahorra €1.44',
     bundleTitle: 'Comprar un Pack',
     bundleSubtitle: 'Ahorra en canciones — los créditos funcionan en cualquier local Zoros',
     bestValue: 'Mejor Precio',
     oneSong: '1 Canción',
     oneSongDesc: 'Paga por canción — sin cuenta',
-    fiveSongs: '5 Canciones',
-    fiveSongsDesc: '5 créditos · se requiere cuenta',
-    fiveSave: 'Ahorra €1.00 vs individual',
-    tenSongs: '10 Canciones',
-    tenSongsDesc: '10 créditos · se requiere cuenta',
-    tenSave: 'Ahorra €3.91 vs individual',
+    fiveSongs: '4 Canciones',
+    fiveSongsDesc: '4 créditos · se requiere cuenta',
+    fiveSave: 'Ahorra €0.47 vs individual',
+    tenSongs: '7 Canciones',
+    tenSongsDesc: '7 créditos · se requiere cuenta',
+    tenSave: 'Ahorra €1.44 vs individual',
     bundleNote: 'Los créditos se guardan en tu cuenta y funcionan en cualquier local Zoros.',
     queueBtn: 'Cola',
     upNext: 'A Continuación',
@@ -482,20 +482,20 @@ const T = {
     heroEm: 'Jouw muziek.',
     heroP: 'Zoek een nummer · Betaal · Hoor het in de zaak',
     perSong: 'per nummer',
-    p5save: 'Bespaar €1,00',
-    p10save: 'Bespaar €3,91',
+    p5save: 'Bespaar €0,47',
+    p10save: 'Bespaar €1,44',
     bundleTitle: 'Koop een Bundel',
     bundleSubtitle: 'Bespaar op nummers — tegoeden werken bij elke Zoros-locatie',
     bestValue: 'Beste Prijs',
     oneSong: '1 Nummer',
     oneSongDesc: 'Betaal per nummer — geen account nodig',
-    fiveSongs: '5 Nummers',
-    fiveSongsDesc: '5 tegoeden · account vereist',
-    fiveSave: 'Bespaar €1,00 t.o.v. los',
-    tenSongs: '10 Nummers',
-    tenSongsDesc: '10 tegoeden · account vereist',
-    tenSave: 'Bespaar €3,91 t.o.v. los',
-    bundleNote: '5 en 10 tegoeden worden opgeslagen in je account en werken bij elke Zoros-locatie.',
+    fiveSongs: '4 Nummers',
+    fiveSongsDesc: '4 tegoeden · account vereist',
+    fiveSave: 'Bespaar €0,47 t.o.v. los',
+    tenSongs: '7 Nummers',
+    tenSongsDesc: '7 tegoeden · account vereist',
+    tenSave: 'Bespaar €1,44 t.o.v. los',
+    bundleNote: '4 en 7 tegoeden worden opgeslagen in je account en werken bij elke Zoros-locatie.',
     queueBtn: 'Wachtrij',
     upNext: 'Hierna',
     emptyQueue: 'De wachtrij is leeg.\nVraag als eerste een nummer aan.',
@@ -528,20 +528,20 @@ const T = {
     heroEm: 'Ta musique.',
     heroP: 'Cherche un morceau · Paie · Écoute-le dans le bar',
     perSong: 'par morceau',
-    p5save: 'Économise 1,00 €',
-    p10save: 'Économise 3,91 €',
+    p5save: 'Économise 0,47 €',
+    p10save: 'Économise 1,44 €',
     bundleTitle: 'Acheter un Pack',
     bundleSubtitle: 'Économise sur les morceaux — les crédits fonctionnent dans tous les bars Zoros',
     bestValue: 'Meilleur Prix',
     oneSong: '1 Morceau',
     oneSongDesc: 'Paie à la chanson — sans compte',
-    fiveSongs: '5 Morceaux',
-    fiveSongsDesc: '5 crédits · compte requis',
-    fiveSave: 'Économise 1,00 € vs à l\'unité',
-    tenSongs: '10 Morceaux',
-    tenSongsDesc: '10 crédits · compte requis',
-    tenSave: 'Économise 3,91 € vs à l\'unité',
-    bundleNote: 'Les crédits de 5 et 10 sont enregistrés sur ton compte et fonctionnent dans tous les bars Zoros.',
+    fiveSongs: '4 Morceaux',
+    fiveSongsDesc: '4 crédits · compte requis',
+    fiveSave: 'Économise 0,47 € vs à l\'unité',
+    tenSongs: '7 Morceaux',
+    tenSongsDesc: '7 crédits · compte requis',
+    tenSave: 'Économise 1,44 € vs à l\'unité',
+    bundleNote: 'Les crédits de 4 et 7 sont enregistrés sur ton compte et fonctionnent dans tous les bars Zoros.',
     queueBtn: 'File',
     upNext: 'À Suivre',
     emptyQueue: 'La file est vide.\nSois le premier à demander un morceau.',
@@ -784,7 +784,7 @@ async function confirmBuyBundle() {
     const r = await fetch('/api/create-bundle-payment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bundleType: pendingBundleType, venueId: VENUE_ID, src: SRC })
+      body: JSON.stringify({ bundleType: pendingBundleType, venueId: VENUE_ID, src: SRC, lang })
     });
     const data = await r.json();
     if (data.url) window.location.href = data.url;
@@ -934,7 +934,8 @@ async function confirmPay() {
         uri: selectedTrack.uri,
         price: PRICE,
         venueId: VENUE_ID,
-        src: SRC
+        src: SRC,
+        lang
       })
     });
     const data = await r.json();
