@@ -87,6 +87,10 @@
   .welcome-steps li { font-size: 14px; line-height: 1.5; color: var(--white); padding: 6px 0 6px 30px; position: relative; }
   .welcome-steps li span { position: absolute; left: 0; top: 6px; width: 20px; height: 20px; border-radius: 50%; background: var(--orange); color: var(--white); font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
   .welcome-note { font-size: 12px; color: var(--muted); line-height: 1.6; margin-bottom: 20px; }
+  .logo .wordmark { display: block; width: clamp(78px, calc(100vw - 280px), 140px); height: auto; margin-bottom: 5px; }
+  /* With credits showing the header is crowded, so the lettering takes the same width the old "ZOROS" text did */
+  .header:has(#creditsBadge[style*="block"]) .logo .wordmark { width: 78px; }
+  @media (min-width: 341px) { .header { gap: 6px; } }
   .header-right { display: flex; align-items: center; gap: 10px; }
   .queue-pill { background: var(--orange); color: var(--white); font-size: 11px; font-weight: 500; padding: 6px 14px; border-radius: 20px; cursor: pointer; letter-spacing: 0.5px; border: none; }
   .credits-badge { background: rgba(29,185,84,0.2); border: 1px solid rgba(29,185,84,0.4); color: #1db954; font-size: 11px; font-weight: 500; padding: 6px 12px; border-radius: 20px; display: none; cursor: pointer; }
@@ -281,7 +285,7 @@
 <div class="header">
   <div class="logo-wrap">
     <div class="brand-icon" role="img" aria-label="Zoros"></div>
-    <div class="logo">Zoros<span id="venueLabel">Your Night · Your Music</span></div>
+    <div class="logo"><img class="wordmark" src="/wordmark.png" alt="Zoros"><span id="venueLabel">Your Night · Your Music</span></div>
   </div>
   <div class="header-right">
     <div class="credits-badge" id="creditsBadge" onclick="showBundleScreen()">0 credits</div>
