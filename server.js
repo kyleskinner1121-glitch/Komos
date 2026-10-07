@@ -663,14 +663,15 @@ app.post('/api/create-bundle-payment', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Must be logged in to buy bundles' });
   const bundles = {
     single: { credits: 1, price: 99, label: '1 Song' },
-    five: { credits: 5, price: 399, label: '5 Songs' },
-    ten: { credits: 10, price: 599, label: '10 Songs' }
+    four: { credits: 4, price: 349, label: '4 Songs' },
+    seven: { credits: 7, price: 549, label: '7 Songs' }
   };
-  const { bundleType, venueId = 'default', src } = req.body;
+  const { bundleType, venueId = 'default', src, lang } = req.body;
   const bundle = bundles[bundleType];
   if (!bundle) return res.status(400).json({ error: 'Invalid bundle' });
   try {
     const session = await stripe.checkout.sessions.create({
+      locale: stripeLocale(lang),
       payment_method_types: ['card'],
       line_items: [{
         price_data: {
@@ -697,7 +698,7 @@ app.post('/api/create-bundle-payment', async (req, res) => {
 // ── BUNDLE SUCCESS ──
 app.post('/api/bundle/confirm', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
-  const bundles = { single: 1, five: 5, ten: 10 };
+  const bundles = { single: 1, four: 4, seven: 7, five: 5, ten: 10 }; // five/ten kept for older checkouts
   const { session_id } = req.body;
   if (!session_id) return res.status(400).json({ error: 'Missing session' });
   try {
@@ -1230,9 +1231,14 @@ app.get('/api/search', async (req, res) => {
 
 const SONG_PRICE = 99; // cents, EUR
 
+// Show Stripe's checkout page in the language the patron picked in Zoros
+function stripeLocale(lang) {
+  return ['en', 'es', 'nl', 'fr'].includes(lang) ? lang : 'auto';
+}
+
 app.post('/api/create-payment', async (req, res) => {
   try {
-    const { trackId, trackName, artist, image, uri, venueId = 'default', src } = req.body;
+    const { trackId, trackName, artist, image, uri, venueId = 'default', src, lang } = req.body;
     const price = SONG_PRICE; // set server-side so a patron can't edit the request to pay less
     if (!(await venueIsActive(venueId))) {
       return res.status(400).json({ error: 'off', off: true });
@@ -1244,6 +1250,7 @@ app.post('/api/create-payment', async (req, res) => {
       return res.status(400).json({ error: 'blocked', blocked: true });
     }
     const session = await stripe.checkout.sessions.create({
+      locale: stripeLocale(lang),
       payment_method_types: ['card'],
       line_items: [{
         price_data: {
