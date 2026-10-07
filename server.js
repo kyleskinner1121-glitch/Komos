@@ -152,6 +152,8 @@ async function initDB() {
     // Bar music settings (explicit filter, blocked genres). ADD COLUMN IF NOT EXISTS
     // means this runs safely on every start — no manual migration needed.
     await pool.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'::jsonb`);
+    // Which bar a patron was at when they made their account (for the team dashboard)
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_venue VARCHAR(255)`);
     // Team dashboard: payment details, page visits, and bar payouts. All safe to re-run on every start.
     await pool.query(`ALTER TABLE processed_payments
       ADD COLUMN IF NOT EXISTS amount INTEGER,
@@ -199,7 +201,7 @@ function requireVenueAuth(req, res, next) {
 
 // ── USER AUTH ROUTES ──
 app.post('/api/auth/signup', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, venueId } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
   try {
@@ -207,8 +209,8 @@ app.post('/api/auth/signup', async (req, res) => {
     if (existing.rows.length) return res.status(400).json({ error: 'Email already registered' });
     const hash = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email, credits',
-      [email.toLowerCase(), hash]
+      'INSERT INTO users (email, password_hash, signup_venue) VALUES ($1, $2, $3) RETURNING id, email, credits',
+      [email.toLowerCase(), hash, venueId && venueId !== 'default' ? String(venueId).slice(0, 255) : null]
     );
     req.session.userId = result.rows[0].id;
     req.session.email = result.rows[0].email;
@@ -622,6 +624,32 @@ app.get('/api/admin/stats', async (req, res) => {
     });
   } catch (e) {
     console.error('[stats] error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Every patron account, newest first. ?format=csv downloads it as a spreadsheet.
+app.get('/api/admin/patrons', async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { rows } = await pool.query(`
+      SELECT u.email, u.created_at, u.signup_venue, u.credits, COUNT(s.id)::int AS songs_requested, MAX(s.added_at) AS last_song
+      FROM users u LEFT JOIN songs s ON s.user_id = u.id
+      GROUP BY u.id ORDER BY u.created_at DESC`);
+    if (req.query.format === 'csv') {
+      const cell = v => {
+        let t = v == null ? '' : (v instanceof Date ? v.toISOString() : String(v));
+        if (/^[=+\-@]/.test(t)) t = "'" + t; // stop spreadsheet formula injection
+        return '"' + t.replace(/"/g, '""') + '"';
+      };
+      const lines = [['email', 'signed_up', 'signup_bar', 'credits_left', 'songs_requested', 'last_song']]
+        .concat(rows.map(r => [r.email, r.created_at, r.signup_venue, r.credits, r.songs_requested, r.last_song]));
+      res.set('Content-Type', 'text/csv; charset=utf-8');
+      res.set('Content-Disposition', 'attachment; filename="zoros-patrons.csv"');
+      return res.send(lines.map(l => l.map(cell).join(',')).join('\n'));
+    }
+    res.json({ total: rows.length, patrons: rows });
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Zoros — Venue Dashboard</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
 
   :root {
     --bg: #0f0d14;
@@ -61,6 +61,13 @@
   }
 
   .login-logo span { color: var(--orange); }
+  .brand { display: flex; align-items: center; gap: 10px; font-family: 'Bebas Neue', sans-serif; color: var(--orange); letter-spacing: 3px; font-weight: 400; line-height: 1; }
+  .brand .brand-icon { border-radius: 50%; flex-shrink: 0; }
+  .login-logo.brand, .topbar-logo.brand { font-family: 'Bebas Neue', sans-serif; font-weight: 400; color: var(--orange); }
+  .login-logo.brand { font-size: 40px; justify-content: center; }
+  .login-logo.brand .brand-icon { width: 52px; height: 52px; }
+  .topbar-logo.brand { font-size: 28px; }
+  .topbar-logo.brand .brand-icon { width: 34px; height: 34px; }
 
   .login-subtitle {
     color: var(--text-muted);
@@ -832,7 +839,7 @@
 <!-- LOGIN -->
 <div id="login-screen">
   <div class="login-card">
-    <div class="login-logo">Zoros<span>.</span></div>
+    <div class="login-logo brand"><img class="brand-icon" src="/logo.webp" alt="">Zoros</div>
     <div class="login-subtitle" data-en="Venue dashboard — staff access only" data-es="Panel del local — solo personal autorizado">Venue dashboard — staff access only</div>
     <div class="field">
       <label data-en="Email" data-es="Correo">Email</label>
@@ -865,7 +872,7 @@
 <div id="dashboard">
   <div class="topbar">
     <div class="topbar-left">
-      <div class="topbar-logo">Zoros<span>.</span></div>
+      <div class="topbar-logo brand"><img class="brand-icon" src="/logo.webp" alt="">Zoros</div>
       <div class="venue-name" id="topbar-venue-name">Loading...</div>
     </div>
     <div class="topbar-right">

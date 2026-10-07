@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Zoros — Team Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #120d33;
@@ -36,6 +36,9 @@
   .login-card { width: 100%; max-width: 380px; background: var(--navy); border: 1px solid var(--border); border-radius: 18px; padding: 40px 32px; }
   .logo { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 26px; letter-spacing: -0.01em; }
   .logo span { color: var(--orange); }
+  .brand { display: flex; align-items: center; gap: 10px; font-family: 'Bebas Neue', sans-serif; color: var(--orange); letter-spacing: 3px; font-weight: 400; font-size: 34px; line-height: 1; }
+  .brand .brand-icon { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; }
+  .brand .team { font-family: 'Space Grotesk', sans-serif; color: var(--lavender); font-size: 16px; font-weight: 500; letter-spacing: 0; }
   .login-card p { color: var(--muted); font-size: 14px; margin: 6px 0 28px; }
   .login-card input { width: 100%; padding: 13px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); outline: none; }
   .login-card input:focus { border-color: var(--orange); }
@@ -141,7 +144,7 @@
 
 <div id="login">
   <form class="login-card" onsubmit="doLogin(event)">
-    <div class="logo">ZOROS<span>.</span></div>
+    <div class="logo brand"><img class="brand-icon" src="/logo.webp" alt="">Zoros</div>
     <p>Team dashboard — enter the admin key.</p>
     <input id="keyInput" type="password" placeholder="Admin key" autocomplete="current-password" autofocus>
     <button class="btn" type="submit">Open dashboard</button>
@@ -152,7 +155,7 @@
 <div id="app" class="hidden">
   <div class="wrap">
     <header>
-      <div class="logo">ZOROS<span>.</span> <span style="color:var(--lavender);font-size:16px;font-weight:500">Team</span></div>
+      <div class="logo brand"><img class="brand-icon" src="/logo.webp" alt="">Zoros <span class="team">Team</span></div>
       <div class="meta">
         <span id="updated">Loading…</span>
         <button class="btn ghost small" onclick="load()">Refresh</button>
@@ -218,6 +221,17 @@
         <div class="hint">Payments you've marked as sent.</div>
         <div class="tbl-wrap"><table id="payoutsTbl"></table></div>
       </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div>
+          <h2>Patron accounts <span class="num" id="patronCount" style="color:var(--muted);font-weight:500"></span></h2>
+          <div class="hint">Everyone who has made an account, newest first. Download for the full list.</div>
+        </div>
+        <button class="btn ghost small" onclick="downloadPatrons()">Download CSV</button>
+      </div>
+      <div class="tbl-wrap"><table id="patronsTbl"></table></div>
     </div>
   </div>
 </div>
@@ -366,6 +380,7 @@ function render() {
   renderSongs('topSongs', d.topSongs, true);
   renderSongs('recentSongs', d.recentSongs, false);
   renderApps(d.applications);
+  loadPatrons();
   renderPayouts(d.payouts);
 }
 
@@ -480,6 +495,31 @@ function renderSongs(id, rows, ranked) {
       <div class="info"><div class="t">${esc(s.name)}</div><div class="a">${esc(s.artist)}</div></div>
       <div class="x">${ranked ? `${s.plays}×` : `${esc(barName(s.venue_id))}<br>${ago(s.added_at)}`}</div>
     </div>`).join('');
+}
+
+async function loadPatrons() {
+  const el = document.getElementById('patronsTbl');
+  try {
+    const r = await fetch('/api/admin/patrons', { headers: { 'x-admin-key': KEY } });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Failed');
+    document.getElementById('patronCount').textContent = `(${int(d.total)})`;
+    const rows = d.patrons.slice(0, 50);
+    if (!rows.length) { el.innerHTML = '<tr><td class="empty">No patron accounts yet.</td></tr>'; return; }
+    el.innerHTML = `<thead><tr><th>Email</th><th>Signed up at</th><th class="r">Credits left</th><th class="r">Songs</th><th>Joined</th></tr></thead><tbody>` +
+      rows.map(p => `<tr><td>${esc(p.email)}</td><td>${esc(p.signup_venue || '—')}</td>
+        <td class="r num">${int(p.credits)}</td><td class="r num">${int(p.songs_requested)}</td><td>${ago(p.created_at)}</td></tr>`).join('') + '</tbody>';
+  } catch (e) {
+    el.innerHTML = `<tr><td class="empty">Couldn't load patrons: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function downloadPatrons() {
+  const r = await fetch('/api/admin/patrons?format=csv', { headers: { 'x-admin-key': KEY } });
+  if (!r.ok) return alert('Download failed');
+  const url = URL.createObjectURL(await r.blob());
+  const a = Object.assign(document.createElement('a'), { href: url, download: 'zoros-patrons.csv' });
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
 
 function renderApps(rows) {
