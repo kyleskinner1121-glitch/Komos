@@ -87,6 +87,10 @@
   .welcome-steps li { font-size: 14px; line-height: 1.5; color: var(--white); padding: 6px 0 6px 30px; position: relative; }
   .welcome-steps li span { position: absolute; left: 0; top: 6px; width: 20px; height: 20px; border-radius: 50%; background: var(--orange); color: var(--white); font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
   .welcome-note { font-size: 12px; color: var(--muted); line-height: 1.6; margin-bottom: 20px; }
+  .logo .wordmark { display: block; width: clamp(96px, calc(100vw - 250px), 150px); height: auto; margin-bottom: 5px; }
+  .lang-logo .wordmark { display: block; height: 44px; width: auto; margin: 6px auto 4px; }
+  .hero-credits { display: flex; justify-content: flex-end; }
+  .hero-credits .credits-badge { margin: -12px 0 12px; }
   .header-right { display: flex; align-items: center; gap: 10px; }
   .queue-pill { background: var(--orange); color: var(--white); font-size: 11px; font-weight: 500; padding: 6px 14px; border-radius: 20px; cursor: pointer; letter-spacing: 0.5px; border: none; }
   .credits-badge { background: rgba(29,185,84,0.2); border: 1px solid rgba(29,185,84,0.4); color: #1db954; font-size: 11px; font-weight: 500; padding: 6px 12px; border-radius: 20px; display: none; cursor: pointer; }
@@ -195,14 +199,14 @@
 
 <div class="off-screen" id="offScreen">
   <div class="brand-icon" role="img" aria-label="Zoros"></div>
-  <div class="lang-logo">Zoros</div>
+  <div class="lang-logo"><img class="wordmark" src="/wordmark.png" alt="Zoros"></div>
   <div class="off-icon">🔇</div>
   <div class="off-msg" id="offMsg">Zoros is turned off right now, ask your bartender to turn it back on!</div>
 </div>
 
 <div class="lang-screen" id="langScreen">
   <div class="brand-icon" role="img" aria-label="Zoros"></div>
-  <div class="lang-logo">Zoros</div>
+  <div class="lang-logo"><img class="wordmark" src="/wordmark.png" alt="Zoros"></div>
   <div class="lang-tagline">Your Night · Your Music</div>
   <div class="lang-prompt">Choose your language / Elige tu idioma / Kies je taal / Choisis ta langue</div>
   <button class="lang-btn" onclick="setLanguage('en')">
@@ -281,10 +285,9 @@
 <div class="header">
   <div class="logo-wrap">
     <div class="brand-icon" role="img" aria-label="Zoros"></div>
-    <div class="logo">Zoros<span id="venueLabel">Your Night · Your Music</span></div>
+    <div class="logo"><img class="wordmark" src="/wordmark.png" alt="Zoros"><span id="venueLabel">Your Night · Your Music</span></div>
   </div>
   <div class="header-right">
-    <div class="credits-badge" id="creditsBadge" onclick="showBundleScreen()">0 credits</div>
     <button class="queue-pill" onclick="openQueue()" id="txt-queue-btn">Queue <span id="queueBadge" class="queue-count-badge" style="display:none">0</span></button>
     <div class="lang-switcher">
       <button class="lang-globe-btn" onclick="toggleLangDropdown()" id="globeBtn">🌐 <span id="currentLangLabel">EN</span></button>
@@ -299,6 +302,9 @@
 </div>
 
 <div class="hero">
+  <div class="hero-credits">
+    <div class="credits-badge" id="creditsBadge" onclick="showBundleScreen()">0 credits</div>
+  </div>
   <h1 id="txt-hero-h1">Your night.<br><em id="txt-hero-em">Your music.</em></h1>
   <p id="txt-hero-p">Search any song · Pay · Hear it in the bar</p>
   <div class="pricing-grid">
