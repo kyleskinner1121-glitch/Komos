@@ -730,6 +730,9 @@ app.post('/api/queue/use-credit', async (req, res) => {
     if (!(await venueIsActive(venue_id))) {
       return res.status(400).json({ error: 'off', off: true });
     }
+    if (!(await spotifyIsPlaying(venue_id))) {
+      return res.status(400).json({ error: 'notplaying', notPlaying: true });
+    }
     if (!(await uriAllowedForVenue(venue_id, uri))) {
       return res.status(400).json({ error: 'blocked', blocked: true });
     }
@@ -908,6 +911,51 @@ async function addToSpotifyQueue(venueId, uri) {
   }
 }
 
+// Is the bar's Spotify actually playing right now? Patrons can only pay while it is,
+// because Spotify refuses to queue songs when nothing is playing on the bar's device.
+async function spotifyIsPlaying(venueId) {
+  const token = await getVenueToken(venueId);
+  if (!token) return false; // bar hasn't connected Spotify
+  try {
+    const r = await fetch('https://api.spotify.com/v1/me/player', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (r.status !== 200) return false; // 204 = no active device
+    const data = await r.json();
+    return !!(data && data.is_playing);
+  } catch (e) {
+    return true; // network hiccup talking to Spotify — don't block the sale; the retry below catches it
+  }
+}
+
+// ── RETRY SONGS THAT DIDN'T REACH SPOTIFY ──
+// If the music was paused between the patron paying and the song being sent,
+// Spotify rejects it. Every 10 seconds, try again (oldest first) until it lands.
+// Only looks at the last 3 hours so old test songs never get pushed by surprise.
+async function retryPendingSpotify() {
+  try {
+    const pending = await pool.query(
+      `SELECT id, venue_id, uri, name FROM songs
+       WHERE status = 'queued' AND added_to_spotify IS NOT TRUE
+         AND added_at > NOW() - INTERVAL '3 hours'
+       ORDER BY added_at ASC`
+    );
+    const blockedVenues = new Set();
+    for (const song of pending.rows) {
+      if (blockedVenues.has(song.venue_id)) continue; // keep order: stop at first failure per bar
+      const ok = await addToSpotifyQueue(song.venue_id, song.uri);
+      if (ok) {
+        await pool.query('UPDATE songs SET added_to_spotify = TRUE WHERE id = $1', [song.id]);
+        console.log(`[spotify-retry] Sent "${song.name}" to Spotify at ${song.venue_id}`);
+      } else {
+        blockedVenues.add(song.venue_id);
+      }
+    }
+  } catch (e) {
+    console.error('[spotify-retry] Error:', e.message);
+  }
+}
+
 // ── SERVER-SIDE AUTO-CLEAR ──
 async function autoClearPlayed() {
   try {
@@ -977,6 +1025,8 @@ async function autoClearPlayed() {
 setTimeout(() => {
   autoClearPlayed();
   setInterval(autoClearPlayed, 10000);
+  retryPendingSpotify();
+  setInterval(retryPendingSpotify, 10000);
 }, 5000);
 
 // ── OUTREACH AGENT (SCHEDULED) ──
@@ -1186,6 +1236,9 @@ app.post('/api/create-payment', async (req, res) => {
     const price = SONG_PRICE; // set server-side so a patron can't edit the request to pay less
     if (!(await venueIsActive(venueId))) {
       return res.status(400).json({ error: 'off', off: true });
+    }
+    if (!(await spotifyIsPlaying(venueId))) {
+      return res.status(400).json({ error: 'notplaying', notPlaying: true });
     }
     if (!(await uriAllowedForVenue(venueId, uri))) {
       return res.status(400).json({ error: 'blocked', blocked: true });
