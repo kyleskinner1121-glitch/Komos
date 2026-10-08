@@ -11,6 +11,8 @@ const pgSession = require('connect-pg-simple')(session);
 const { Resend } = require('resend');
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const { runOutreachAgent } = require('./outreach/run');
+const crypto = require('crypto');
+const { syncBarLogin } = require('./links-sheet');
 
 // ── OUTREACH AGENT CONFIG ──
 // Spreadsheet ID from the Bar Tracker's URL (docs.google.com/spreadsheets/d/<THIS>/edit).
@@ -460,18 +462,76 @@ app.get('/api/admin/applications', async (req, res) => {
   }
 });
 
-app.post('/api/admin/create-venue', async (req, res) => {
-  const { adminKey, name, city, venueId, email, password } = req.body;
-  if (adminKey !== process.env.ADMIN_KEY) return res.status(403).json({ error: 'Unauthorized' });
+// ── ADMIN: BAR ACCOUNTS ──
+// Zoros sets every bar's password (bars can't change it), so the team always has the current one.
+// Each new or reset password is also written to the Zoros Links sheet; if that write fails, the
+// account change still stands and the dashboard shows the password to copy over by hand.
+
+// 12 characters in groups of 4, e.g. "kp7R-m3Qx-9tLw". No look-alike characters (0/O, 1/l/I).
+function generatePassword() {
+  const letters = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ';
+  const chars = letters + '23456789';
+  let out = letters[crypto.randomInt(letters.length)];
+  while (out.length < 12) out += chars[crypto.randomInt(chars.length)];
+  return out.match(/.{4}/g).join('-');
+}
+
+async function syncLoginToSheet(venue, password) {
   try {
-    const existing = await pool.query('SELECT id FROM venues WHERE email = $1 OR venue_id = $2', [email.toLowerCase(), venueId]);
-    if (existing.rows.length) return res.status(400).json({ error: 'Email or venue ID already exists' });
+    await syncBarLogin({ name: venue.name, venueId: venue.venue_id, email: venue.email, password, baseUrl: process.env.BASE_URL });
+    return { sheetSynced: true };
+  } catch (e) {
+    console.error('[links-sheet] sync failed:', e.message);
+    return { sheetSynced: false, sheetError: e.message };
+  }
+}
+
+app.post('/api/admin/create-venue', async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Unauthorized' });
+  const name = String(req.body.name || '').trim();
+  const city = String(req.body.city || '').trim();
+  const venueId = String(req.body.venueId || '').trim();
+  const email = String(req.body.email || '').trim().toLowerCase();
+  if (!name || !city || !venueId || !email) return res.status(400).json({ error: 'Name, city, venue ID and email are all required' });
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(venueId)) return res.status(400).json({ error: 'Venue ID can only use lowercase letters, numbers and single hyphens' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'That email doesn\'t look right' });
+  try {
+    const existing = await pool.query('SELECT email, venue_id FROM venues WHERE email = $1 OR venue_id = $2', [email, venueId]);
+    if (existing.rows.length) {
+      const taken = existing.rows[0].venue_id === venueId ? 'That venue ID' : 'That email';
+      return res.status(400).json({ error: `${taken} already has an account` });
+    }
+    const password = generatePassword();
     const hash = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      'INSERT INTO venues (name, city, venue_id, email, password_hash) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, city, venue_id',
-      [name, city, venueId, email.toLowerCase(), hash]
+      'INSERT INTO venues (name, city, venue_id, email, password_hash) VALUES ($1, $2, $3, $4, $5) RETURNING name, city, venue_id, email',
+      [name, city, venueId, email, hash]
     );
-    res.json({ success: true, venue: result.rows[0] });
+    const venue = result.rows[0];
+    res.json({ success: true, venue, password, ...(await syncLoginToSheet(venue, password)) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// New password for a bar. The old one stops working and any device logged in as the bar is logged out.
+app.post('/api/admin/reset-password', async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Unauthorized' });
+  const { venueId } = req.body || {};
+  try {
+    const password = generatePassword();
+    const hash = await bcrypt.hash(password, 10);
+    const result = await pool.query(
+      'UPDATE venues SET password_hash = $1 WHERE venue_id = $2 RETURNING name, city, venue_id, email',
+      [hash, venueId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'No bar account with that venue ID' });
+    // Log the bar out everywhere. Never let this block the reset: the password has already changed,
+    // and the session table only exists once someone has logged in.
+    await pool.query(`DELETE FROM session WHERE sess->>'venueId' = $1`, [venueId])
+      .catch(e => { if (e.code !== '42P01') console.error('[reset-password] logout failed:', e.message); });
+    const venue = result.rows[0];
+    res.json({ success: true, venue, password, ...(await syncLoginToSheet(venue, password)) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
