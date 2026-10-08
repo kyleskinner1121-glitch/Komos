@@ -49,13 +49,7 @@
     text-align: center;
   }
   .lang-screen.hidden { display: none; }
-  .lang-logo {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 32px;
-    font-weight: 700;
-    margin-bottom: 8px;
-  }
-  .lang-logo span { color: var(--orange); }
+  .lang-logo { display: block; width: min(200px, 60vw); height: auto; margin: 0 auto 14px; }
   .lang-tagline { color: var(--text-muted); font-size: 14px; margin-bottom: 40px; }
   .lang-prompt { color: var(--text-dim); font-size: 13px; margin-bottom: 20px; }
   .lang-btn {
@@ -127,13 +121,7 @@
     padding: 16px 24px 80px;
   }
 
-  .logo {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 22px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-  }
-  .logo span { color: var(--orange); }
+  .logo { display: block; width: 140px; height: auto; }
 
   .eyebrow {
     color: var(--text-dim);
@@ -331,7 +319,7 @@
 
   <!-- Language chooser: shown on first visit, matches patron app pattern -->
   <div class="lang-screen" id="langScreen">
-    <div class="lang-logo">ZOROS<span>.</span></div>
+    <img class="lang-logo" src="/wordmark.png" alt="Zoros">
     <div class="lang-tagline">Digital jukebox for bars</div>
     <div class="lang-prompt">Choose your language / Elige tu idioma</div>
     <button class="lang-btn" onclick="setLanguage('en')">🇬🇧 English</button>
@@ -349,7 +337,7 @@
   </div>
 
   <div class="wrap">
-    <div class="logo">ZOROS<span>.</span></div>
+    <img class="logo" src="/wordmark.png" alt="Zoros">
     <div class="eyebrow" id="txt-eyebrow">Digital jukebox for bars</div>
 
     <h1 id="txt-h1">A new revenue stream.<span class="accent" id="txt-h1-accent">Zero cost. Zero hassle.</span></h1>

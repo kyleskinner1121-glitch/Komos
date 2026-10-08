@@ -52,15 +52,7 @@
     max-width: 420px;
   }
 
-  .login-logo {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 28px;
-    font-weight: 700;
-    color: var(--text);
-    margin-bottom: 4px;
-  }
-
-  .login-logo span { color: var(--orange); }
+  .login-logo { display: block; width: 170px; height: auto; margin-bottom: 10px; }
 
   .login-subtitle {
     color: var(--text-muted);
@@ -213,13 +205,7 @@
 
   .topbar-left { display: flex; align-items: center; gap: 16px; }
 
-  .topbar-logo {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 20px;
-    font-weight: 700;
-  }
-
-  .topbar-logo span { color: var(--orange); }
+  .topbar-logo { display: block; width: 104px; height: auto; flex-shrink: 0; }
 
   .venue-name {
     color: var(--text-muted);
@@ -516,10 +502,13 @@
   .stat-value { font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 700; }
   .stat-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 
-  .insights-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  /* minmax(0, 1fr) so a long song name shortens with "…" instead of widening the column past the screen */
+  .insights-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-bottom: 20px; }
 
   @media (max-width: 600px) {
-    .insights-grid { grid-template-columns: 1fr; }
+    .insights-grid { grid-template-columns: minmax(0, 1fr); }
+    .tabs { padding: 0 8px; gap: 0; }
+    .tab { flex: 1; text-align: center; padding: 13px 4px; font-size: 13px; white-space: nowrap; }
     .revenue-stats { grid-template-columns: 1fr; }
     .topbar { flex-wrap: wrap; height: auto; padding: 12px; gap: 8px; }
   }
@@ -832,7 +821,7 @@
 <!-- LOGIN -->
 <div id="login-screen">
   <div class="login-card">
-    <div class="login-logo">Zoros<span>.</span></div>
+    <img class="login-logo" src="/wordmark.png" alt="Zoros">
     <div class="login-subtitle" data-en="Venue dashboard — staff access only" data-es="Panel del local — solo personal autorizado">Venue dashboard — staff access only</div>
     <div class="field">
       <label data-en="Email" data-es="Correo">Email</label>
@@ -865,7 +854,7 @@
 <div id="dashboard">
   <div class="topbar">
     <div class="topbar-left">
-      <div class="topbar-logo">Zoros<span>.</span></div>
+      <img class="topbar-logo" src="/wordmark.png" alt="Zoros">
       <div class="venue-name" id="topbar-venue-name">Loading...</div>
     </div>
     <div class="topbar-right">
@@ -1016,7 +1005,7 @@
   let venueData = null;
   let revenueData = null;
   let currentRevPeriod = 'today';
-  let currentLang = localStorage.getItem('zorос-dash-lang') || 'en';
+  let currentLang = localStorage.getItem('zoros-dash-lang') || 'en';
 
   const GENRES = [
     { id: 'pop',        label: 'Pop' },
