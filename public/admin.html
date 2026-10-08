@@ -508,7 +508,7 @@ function renderBars(bars) {
       <td class="r num">${eur(b.bar_share)}</td>
       <td>${ago(b.last_song)}</td>
       <td class="r num ${b.owed ? 'owed' : ''}">${eur(b.owed)}</td>
-      <td class="row-actions">${b.owed ? `<button class="btn ghost small" onclick="openPay('${esc(b.venue_id)}')">Mark paid</button> ` : ''}${b.name && !b.removed ? `<button class="btn ghost small" onclick="resetPassword('${esc(b.venue_id)}')">Reset password</button> ` : ''}${b.removed ? '' : `<button class="btn ghost small danger" onclick="removeBar('${esc(b.venue_id)}')">Remove</button>`}</td>
+      <td class="row-actions">${b.owed ? `<button class="btn ghost small" onclick="openPay('${esc(b.venue_id)}')">Mark paid</button> ` : ''}${b.name && !b.removed ? `<button class="btn ghost small" onclick="resetPassword('${esc(b.venue_id)}')">Reset password</button> ` : ''}${b.removed ? `<button class="btn ghost small" onclick="restoreBar('${esc(b.venue_id)}')">Restore</button>` : `<button class="btn ghost small danger" onclick="removeBar('${esc(b.venue_id)}')">Remove</button>`}</td>
     </tr>`).join('') + '</tbody>';
 }
 
@@ -634,6 +634,25 @@ async function removeBar(venueId) {
     const d = await adminPost('/api/admin/remove-venue', { venueId });
     if (!d.sheetSynced) alert(`${name} was removed, but the Zoros Links sheet couldn't be updated (${d.sheetError}). Mark it as Removed there by hand.`);
     load();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+async function restoreBar(venueId) {
+  const b = data.bars.find(x => x.venue_id === venueId);
+  const name = barName(venueId);
+  const what = b && b.name
+    ? 'Its QR codes work again and it gets a new password. It will need to connect Spotify again.'
+    : 'Its QR codes work again.';
+  if (!confirm(`Restore ${name}?\n\n${what}`)) return;
+  try {
+    const d = await adminPost('/api/admin/restore-venue', { venueId });
+    if (d.password) {
+      showCreds(`${d.venue.name} is restored`, 'Send the bar its new login, then have them connect Spotify again.', d);
+    } else {
+      if (!d.sheetSynced) alert(`${name} was restored, but the Zoros Links sheet couldn't be updated (${d.sheetError}).`);
+      load();
+    }
   } catch (err) {
     alert(err.message);
   }

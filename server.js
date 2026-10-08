@@ -12,7 +12,7 @@ const { Resend } = require('resend');
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const { runOutreachAgent } = require('./outreach/run');
 const crypto = require('crypto');
-const { syncBarLogin, markBarRemoved } = require('./links-sheet');
+const { syncBarLogin, markBarRemoved, setBarStatus } = require('./links-sheet');
 
 // ── OUTREACH AGENT CONFIG ──
 // Spreadsheet ID from the Bar Tracker's URL (docs.google.com/spreadsheets/d/<THIS>/edit).
@@ -494,9 +494,9 @@ async function logOutVenue(venueId) {
     .catch(e => { if (e.code !== '42P01') console.error('[logout] failed for', venueId, e.message); });
 }
 
-async function syncLoginToSheet(venue, password) {
+async function syncLoginToSheet(venue, password, status) {
   try {
-    await syncBarLogin({ name: venue.name, venueId: venue.venue_id, email: venue.email, password, baseUrl: process.env.BASE_URL });
+    await syncBarLogin({ name: venue.name, venueId: venue.venue_id, email: venue.email, password, baseUrl: process.env.BASE_URL, status });
     return { sheetSynced: true };
   } catch (e) {
     console.error('[links-sheet] sync failed:', e.message);
@@ -572,6 +572,37 @@ app.post('/api/admin/remove-venue', async (req, res) => {
       sheet = { sheetSynced: false, sheetError: e.message };
     }
     res.json({ success: true, ...sheet });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Bring a removed bar back. A bar with an account gets a new password (the sheet's copy was cleared
+// on removal) and is marked Live; it has to reconnect Spotify. A bar with no account just reopens.
+app.post('/api/admin/restore-venue', async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Unauthorized' });
+  const venueId = String((req.body && req.body.venueId) || '').trim();
+  try {
+    const gone = await pool.query('DELETE FROM removed_venues WHERE venue_id = $1 RETURNING venue_id', [venueId]);
+    if (!gone.rows.length) return res.status(404).json({ error: 'That bar isn\'t removed' });
+    const password = generatePassword();
+    const hash = await bcrypt.hash(password, 10);
+    const result = await pool.query(
+      'UPDATE venues SET is_active = true, password_hash = $1 WHERE venue_id = $2 RETURNING name, city, venue_id, email',
+      [hash, venueId]
+    );
+    if (result.rows.length) {
+      const venue = result.rows[0];
+      return res.json({ success: true, venue, password, ...(await syncLoginToSheet(venue, password, 'Live')) });
+    }
+    let sheet = { sheetSynced: true };
+    try {
+      await setBarStatus(venueId, 'Test');
+    } catch (e) {
+      console.error('[links-sheet] restore sync failed:', e.message);
+      sheet = { sheetSynced: false, sheetError: e.message };
+    }
+    res.json({ success: true, venue: null, ...sheet });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

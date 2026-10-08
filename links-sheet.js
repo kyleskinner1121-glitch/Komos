@@ -48,7 +48,7 @@ async function writeCells(sheets, data, valueInputOption) {
 }
 
 // Updates the bar's row (matched on Venue ID), or adds a row under the bars table if it isn't there yet.
-async function syncBarLogin({ name, venueId, email, password, baseUrl }) {
+async function syncBarLogin({ name, venueId, email, password, baseUrl, status }) {
   const sheets = getSheetsClient();
   const { rows, headerIdx, col, rowIdx: found } = await findBarRow(sheets, venueId);
   let rowIdx = found;
@@ -61,6 +61,7 @@ async function syncBarLogin({ name, venueId, email, password, baseUrl }) {
   const cell = (h, value) => cellRef(col, h, rowIdx, value);
   // RAW so a name or password is never read as a formula, number or date
   const raw = [cell('Login email', email), cell('Password', password)];
+  if (status) raw.push(cell('Status', status));
   // Links go in as typed so Sheets makes them clickable
   const typed = [];
   if (isNew) {
@@ -78,13 +79,17 @@ async function syncBarLogin({ name, venueId, email, password, baseUrl }) {
   return { row: rowIdx + 1, added: isNew };
 }
 
-// Marks a removed bar's row: Status "Removed" and the password cleared. No row, nothing to do.
-async function markBarRemoved(venueId) {
+// Sets a bar's Status, and clears its password when clearPassword is set. No row, nothing to do.
+async function setBarStatus(venueId, status, { clearPassword = false } = {}) {
   const sheets = getSheetsClient();
   const { col, rowIdx } = await findBarRow(sheets, venueId);
   if (rowIdx === -1) return { row: null };
-  await writeCells(sheets, [cellRef(col, 'Status', rowIdx, 'Removed'), cellRef(col, 'Password', rowIdx, '')], 'RAW');
+  const cells = [cellRef(col, 'Status', rowIdx, status)];
+  if (clearPassword) cells.push(cellRef(col, 'Password', rowIdx, ''));
+  await writeCells(sheets, cells, 'RAW');
   return { row: rowIdx + 1 };
 }
 
-module.exports = { syncBarLogin, markBarRemoved };
+const markBarRemoved = venueId => setBarStatus(venueId, 'Removed', { clearPassword: true });
+
+module.exports = { syncBarLogin, markBarRemoved, setBarStatus };
