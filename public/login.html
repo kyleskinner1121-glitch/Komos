@@ -9,7 +9,7 @@
   :root { --black: #120E2E; --dark: #1A1245; --card: #231960; --border: #3D3284; --orange: #FF5500; --orange-light: #FF7733; --white: #FFFFFF; --muted: #9B93CC; --green: #27ae60; --red: #e74c3c; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--black); color: var(--white); font-family: 'DM Sans', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
-  .logo { font-family: 'Bebas Neue', sans-serif; font-size: 52px; letter-spacing: 5px; color: var(--orange); margin-bottom: 4px; text-align: center; }
+  .logo { display: block; width: min(220px, 64vw); height: auto; margin: 0 auto 12px; }
   .subtitle { font-size: 11px; letter-spacing: 4px; color: var(--muted); text-transform: uppercase; margin-bottom: 40px; text-align: center; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 32px; width: 100%; max-width: 400px; }
   .tabs { display: flex; gap: 0; margin-bottom: 28px; background: var(--dark); border-radius: 10px; padding: 4px; }
@@ -41,7 +41,7 @@
 </head>
 <body>
 
-<div class="logo">Zoros</div>
+<img class="logo" src="/wordmark.png" alt="Zoros">
 <div class="subtitle">Sign In or Create Account</div>
 
 <div class="card">

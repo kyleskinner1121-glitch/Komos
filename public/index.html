@@ -35,7 +35,7 @@
   .off-screen.show { display: flex; }
   .off-icon { font-size: 56px; margin-bottom: 24px; opacity: 0.8; }
   .off-msg { font-size: 20px; line-height: 1.5; max-width: 320px; color: var(--white); }
-  .lang-logo { font-family: 'Bebas Neue', sans-serif; font-size: 56px; letter-spacing: 6px; color: var(--orange); margin-bottom: 8px; }
+  .lang-logo { display: block; width: min(230px, 64vw); height: auto; margin: 0 auto 14px; }
   .lang-tagline { font-size: 12px; color: var(--muted); letter-spacing: 3px; text-transform: uppercase; font-weight: 300; margin-bottom: 56px; }
   .lang-prompt { font-size: 13px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; font-weight: 300; margin-bottom: 20px; }
   .lang-btn {
@@ -199,14 +199,14 @@
 
 <div class="off-screen" id="offScreen">
   <div class="brand-icon" role="img" aria-label="Zoros"></div>
-  <div class="lang-logo">Zoros</div>
+  <img class="lang-logo" src="/wordmark.png" alt="Zoros">
   <div class="off-icon">🔇</div>
   <div class="off-msg" id="offMsg">Zoros is turned off right now, ask your bartender to turn it back on!</div>
 </div>
 
 <div class="lang-screen" id="langScreen">
   <div class="brand-icon" role="img" aria-label="Zoros"></div>
-  <div class="lang-logo">Zoros</div>
+  <img class="lang-logo" src="/wordmark.png" alt="Zoros">
   <div class="lang-tagline">Your Night · Your Music</div>
   <div class="lang-prompt">Choose your language / Elige tu idioma / Kies je taal / Choisis ta langue</div>
   <button class="lang-btn" onclick="setLanguage('en')">
@@ -455,7 +455,7 @@ const T = {
     payInstead: 'PAY €0.99 INSTEAD',
     buyBundle: '🎵 Buy a bundle and save',
     confirmBuy: (price) => `BUY FOR ${price}`,
-    confirmLoginNote: 'You\'ll create a free account to store your credits — takes 5 seconds with Google.',
+    confirmLoginNote: 'You\'ll create a free account with your email to store your credits. It only takes a moment.',
     creditsRemaining: (n) => `You have ${n} credit${n !== 1 ? 's' : ''} remaining`,
     creditsBadge: (n) => `${n} credit${n !== 1 ? 's' : ''}`,
     addedToast: (n) => `♫ Added — ${n} credit${n !== 1 ? 's' : ''} left`,
@@ -501,7 +501,7 @@ const T = {
     payInstead: 'PAGAR €0.99 EN SU LUGAR',
     buyBundle: '🎵 Comprar un pack y ahorrar',
     confirmBuy: (price) => `COMPRAR POR ${price}`,
-    confirmLoginNote: 'Crearás una cuenta gratuita para guardar tus créditos — 5 segundos con Google.',
+    confirmLoginNote: 'Crearás una cuenta gratuita con tu email para guardar tus créditos. Solo lleva un momento.',
     creditsRemaining: (n) => `Tienes ${n} crédito${n !== 1 ? 's' : ''} restante${n !== 1 ? 's' : ''}`,
     creditsBadge: (n) => `${n} crédito${n !== 1 ? 's' : ''}`,
     addedToast: (n) => `♫ Añadida — ${n} crédito${n !== 1 ? 's' : ''} restante${n !== 1 ? 's' : ''}`,
@@ -547,7 +547,7 @@ const T = {
     payInstead: 'BETAAL LIEVER €0,99',
     buyBundle: '🎵 Koop een bundel en bespaar',
     confirmBuy: (price) => `KOOP VOOR ${price}`,
-    confirmLoginNote: 'Je maakt een gratis account aan om je tegoeden te bewaren — kost 5 seconden met Google.',
+    confirmLoginNote: 'Je maakt met je e-mail een gratis account aan om je tegoeden te bewaren. Het duurt maar even.',
     creditsRemaining: (n) => `Je hebt nog ${n} tegoed${n !== 1 ? 'en' : ''}`,
     creditsBadge: (n) => `${n} tegoed${n !== 1 ? 'en' : ''}`,
     addedToast: (n) => `♫ Toegevoegd — nog ${n} tegoed${n !== 1 ? 'en' : ''}`,
@@ -593,7 +593,7 @@ const T = {
     payInstead: 'PAYER 0,99 € À LA PLACE',
     buyBundle: '🎵 Acheter un pack et économiser',
     confirmBuy: (price) => `ACHETER POUR ${price}`,
-    confirmLoginNote: 'Tu créeras un compte gratuit pour stocker tes crédits — 5 secondes avec Google.',
+    confirmLoginNote: 'Tu créeras un compte gratuit avec ton email pour stocker tes crédits. Ça ne prend qu\'un instant.',
     creditsRemaining: (n) => `Il te reste ${n} crédit${n !== 1 ? 's' : ''}`,
     creditsBadge: (n) => `${n} crédit${n !== 1 ? 's' : ''}`,
     addedToast: (n) => `♫ Ajouté — ${n} crédit${n !== 1 ? 's' : ''} restant${n !== 1 ? 's' : ''}`,
