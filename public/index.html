@@ -176,7 +176,7 @@
   .empty .icon { font-size: 36px; margin-bottom: 12px; opacity: 0.5; }
   .empty p { font-size: 13px; font-weight: 300; line-height: 1.6; }
 
-  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--orange); color: var(--white); padding: 12px 24px; border-radius: 10px; font-size: 13px; font-weight: 500; z-index: 600; transition: transform 0.3s; white-space: nowrap; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(calc(100% + 40px)); background: var(--orange); color: var(--white); padding: 12px 20px; border-radius: 10px; font-size: 13px; font-weight: 500; line-height: 1.4; text-align: center; z-index: 600; transition: transform 0.3s; width: max-content; max-width: calc(100vw - 32px); }
   .toast.show { transform: translateX(-50%) translateY(0); }
 
   .modal { position: fixed; inset: 0; z-index: 300; align-items: flex-end; display: none; }
@@ -448,7 +448,7 @@ const T = {
     resultsLabel: 'Results',
     noResults: 'No results found.\nTry a different search.',
     songBlocked: "This bar isn't taking requests for that song.",
-    notPlaying: "The bar's music isn't playing right now. Try again once it's back on. You haven't been charged.",
+    notPlaying: "Zoros isn't playing music right now. Ask your bartender to activate Zoros, then try again. You haven't been charged.",
     cancel: 'Cancel',
     useCredit: 'USE 1 CREDIT — PLAY THIS SONG',
     pay: 'PAY €0.99 — PLAY THIS SONG',
@@ -494,7 +494,7 @@ const T = {
     resultsLabel: 'Resultados',
     noResults: 'Sin resultados.\nIntenta otra búsqueda.',
     songBlocked: 'Este bar no acepta peticiones de esa canción.',
-    notPlaying: 'La música del bar no está sonando ahora mismo. Inténtalo cuando vuelva. No se te ha cobrado nada.',
+    notPlaying: 'Zoros no está reproduciendo música ahora mismo. Pídele al camarero que active Zoros e inténtalo de nuevo. No se te ha cobrado nada.',
     cancel: 'Cancelar',
     useCredit: 'USAR 1 CRÉDITO — PONER ESTA CANCIÓN',
     pay: 'PAGAR €0.99 — PONER ESTA CANCIÓN',
@@ -540,7 +540,7 @@ const T = {
     resultsLabel: 'Resultaten',
     noResults: 'Geen resultaten gevonden.\nProbeer een andere zoekopdracht.',
     songBlocked: 'Deze bar accepteert geen verzoeken voor dat nummer.',
-    notPlaying: 'De muziek in de bar speelt nu niet. Probeer het opnieuw zodra die weer aan staat. Er is niets afgeschreven.',
+    notPlaying: 'Zoros speelt nu geen muziek. Vraag de barman om Zoros te activeren en probeer het opnieuw. Er is niets afgeschreven.',
     cancel: 'Annuleren',
     useCredit: 'GEBRUIK 1 TEGOED — SPEEL DIT NUMMER',
     pay: 'BETAAL €0,99 — SPEEL DIT NUMMER',
@@ -586,7 +586,7 @@ const T = {
     resultsLabel: 'Résultats',
     noResults: 'Aucun résultat.\nEssaie une autre recherche.',
     songBlocked: "Ce bar n'accepte pas de demandes pour ce morceau.",
-    notPlaying: "La musique du bar ne joue pas en ce moment. Réessaie quand elle reprend. Tu n'as pas été débité.",
+    notPlaying: "Zoros ne joue pas de musique pour le moment. Demande au barman d'activer Zoros, puis réessaie. Tu n'as pas été débité.",
     cancel: 'Annuler',
     useCredit: 'UTILISER 1 CRÉDIT — JOUER CE MORCEAU',
     pay: 'PAYER 0,99 € — JOUER CE MORCEAU',
@@ -658,10 +658,10 @@ function applyTranslations() {
 
 // ── FIRST-VISIT WELCOME ──
 const WELCOME = {
-  en: { title: 'Welcome to Zoros', s1: 'Search for any song', s2: 'Pay in a few taps', s3: 'Hear your song play in the bar', note: 'Buying 4 or 7 songs? The ones you don\'t use are saved to your account, so you can play them later at any Zoros bar.', btn: 'Got it' },
-  es: { title: 'Bienvenido a Zoros', s1: 'Busca cualquier canción', s2: 'Paga en unos segundos', s3: 'Escucha tu canción sonar en el bar', note: '¿Compras 4 o 7 canciones? Las que no uses se guardan en tu cuenta para usarlas más tarde en cualquier bar Zoros.', btn: 'Entendido' },
-  nl: { title: 'Welkom bij Zoros', s1: 'Zoek een nummer', s2: 'Betaal in een paar tikken', s3: 'Hoor jouw nummer in de zaak', note: 'Koop je 4 of 7 nummers? Wat je niet gebruikt blijft bewaard in je account, zodat je het later bij elke Zoros-bar kunt gebruiken.', btn: 'Begrepen' },
-  fr: { title: 'Bienvenue sur Zoros', s1: 'Cherche n\'importe quel morceau', s2: 'Paie en quelques secondes', s3: 'Écoute ton morceau passer dans le bar', note: 'Tu achètes 4 ou 7 morceaux ? Ceux que tu n\'utilises pas sont gardés sur ton compte pour plus tard, dans n\'importe quel bar Zoros.', btn: 'Compris' }
+  en: { title: 'Welcome to Zoros', s1: 'Search for any song', s2: 'Pay in a few taps', s3: 'Hear your song play in the bar', note: 'Buying more than one song? The ones you don\'t use are saved to your account, so you can play them later at any Zoros bar.', btn: 'Got it' },
+  es: { title: 'Bienvenido a Zoros', s1: 'Busca cualquier canción', s2: 'Paga en unos segundos', s3: 'Escucha tu canción sonar en el bar', note: '¿Compras más de una canción? Las que no uses se guardan en tu cuenta para usarlas más tarde en cualquier bar Zoros.', btn: 'Entendido' },
+  nl: { title: 'Welkom bij Zoros', s1: 'Zoek een nummer', s2: 'Betaal in een paar tikken', s3: 'Hoor jouw nummer in de zaak', note: 'Koop je meer dan één nummer? Wat je niet gebruikt blijft bewaard in je account, zodat je het later bij elke Zoros-bar kunt gebruiken.', btn: 'Begrepen' },
+  fr: { title: 'Bienvenue sur Zoros', s1: 'Cherche n\'importe quel morceau', s2: 'Paie en quelques secondes', s3: 'Écoute ton morceau passer dans le bar', note: 'Tu achètes plus d\'un morceau ? Ceux que tu n\'utilises pas sont gardés sur ton compte pour plus tard, dans n\'importe quel bar Zoros.', btn: 'Compris' }
 };
 
 function showWelcome() {
@@ -1060,7 +1060,15 @@ function updateBadge(count) {
 function showLoading() { document.getElementById('results').innerHTML = `<div class="loading"><div class="spinner"></div>${t('loading')}</div>`; }
 function showEmpty() { document.getElementById('results').innerHTML = `<div class="empty"><div class="icon">🎵</div><p>${t('emptySearch').replace('\n','<br>')}</p></div>`; }
 function showError() { document.getElementById('results').innerHTML = `<div class="empty"><div class="icon">⚠️</div><p>${t('error').replace('\n','<br>')}</p></div>`; }
-function showToast(msg) { const toast = document.getElementById('toast'); toast.textContent = msg; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 3000); }
+// Longer messages stay up longer so there's time to read them
+let toastTimer;
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), Math.max(3000, msg.length * 60));
+}
 
 setInterval(loadQueue, 10000);
 </script>
