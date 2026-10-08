@@ -1,2 +1,2 @@
-# Komos
+# Zoros
 Digital Jukebox

@@ -20,6 +20,22 @@ const { syncBarLogin, markBarRemoved, setBarStatus } = require('./links-sheet');
 const BAR_TRACKER_SHEET_ID = process.env.BAR_TRACKER_SHEET_ID || '1uKiVOtCNHVNYQyjYmmpzvosUOh79BDFxrShsS99ssWA';
 
 const app = express();
+
+// ── OLD ADDRESS → ZOROS DOMAIN ──
+// Page visits to the Railway address (old QR codes, bookmarks) move to BASE_URL, keeping the path and ?venue=.
+// Only kicks in while BASE_URL is a non-Railway domain. 302, not 301, so browsers do not remember it if that ever changes.
+const CANONICAL = (() => {
+  try { return new URL(process.env.BASE_URL); } catch { return null; }
+})();
+app.use((req, res, next) => {
+  const host = (req.get('host') || '').toLowerCase();
+  if (CANONICAL && !CANONICAL.hostname.endsWith('.up.railway.app') && host.endsWith('.up.railway.app')
+      && (req.method === 'GET' || req.method === 'HEAD')) {
+    return res.redirect(302, CANONICAL.origin + req.originalUrl);
+  }
+  next();
+});
+
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
@@ -350,7 +366,9 @@ app.post('/api/venue/settings', requireVenueAuth, async (req, res) => {
 // ── VENUE ACTIVE STATUS (for patron app) ──
 app.get('/api/venue/active', async (req, res) => {
   const venueId = req.query.venueId || 'default';
-  res.json({ isActive: await venueIsActive(venueId) });
+  // The bar's name is shown in the patron page header; bars without an account have none
+  const r = await pool.query('SELECT name FROM venues WHERE venue_id = $1', [venueId]).catch(() => ({ rows: [] }));
+  res.json({ isActive: await venueIsActive(venueId), name: r.rows[0] ? r.rows[0].name : null });
 });
 
 // ── VENUE REVENUE ──
