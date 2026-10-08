@@ -125,6 +125,7 @@
   .modal label { display: block; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; margin: 12px 0 6px; }
   .modal input { width: 100%; padding: 11px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--bg); outline: none; }
   .modal input:focus { border-color: var(--orange); }
+  .btn.ghost.danger:hover { border-color: var(--red); color: var(--red); }
   .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
   .cred { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-top: 8px; }
   .cred .k { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -175,6 +176,7 @@
       </div>
       <label class="toggle"><input type="checkbox" id="liveOnly" onchange="saveAndLoad()"> Live payments only</label>
       <label class="toggle"><input type="checkbox" id="includeDemo" onchange="saveAndLoad()"> Include demo bar</label>
+      <label class="toggle"><input type="checkbox" id="showRemoved" onchange="saveAndLoad()"> Show removed bars</label>
     </div>
 
     <div class="banner hidden" id="testBanner"></div>
@@ -293,6 +295,7 @@ let timer = null;
 
 document.getElementById('liveOnly').checked = store.get('zoros_admin_live') === '1';
 document.getElementById('includeDemo').checked = store.get('zoros_admin_demo') === '1';
+document.getElementById('showRemoved').checked = store.get('zoros_admin_removed') === '1';
 
 // ── FORMAT ──
 const eur = c => '€' + ((c || 0) / 100).toLocaleString('en-IE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -333,6 +336,7 @@ function logout() {
 function saveAndLoad() {
   store.set('zoros_admin_live', document.getElementById('liveOnly').checked ? '1' : '0');
   store.set('zoros_admin_demo', document.getElementById('includeDemo').checked ? '1' : '0');
+  store.set('zoros_admin_removed', document.getElementById('showRemoved').checked ? '1' : '0');
   load();
 }
 document.querySelectorAll('#rangeSeg button').forEach(b => {
@@ -344,7 +348,8 @@ async function load() {
   const qs = new URLSearchParams({
     range,
     liveOnly: document.getElementById('liveOnly').checked,
-    includeDemo: document.getElementById('includeDemo').checked
+    includeDemo: document.getElementById('includeDemo').checked,
+    showRemoved: document.getElementById('showRemoved').checked
   });
   try {
     const r = await fetch('/api/admin/stats?' + qs, { headers: { 'x-admin-key': KEY } });
@@ -483,14 +488,18 @@ function niceStep(max) {
 
 function renderBars(bars) {
   const el = document.getElementById('barsTbl');
-  if (!bars.length) { el.innerHTML = '<tr><td class="empty">No bars yet.</td></tr>'; return; }
+  if (!bars.length) {
+    const hidden = data.removedCount ? ` ${data.removedCount} removed, tick "Show removed bars" to see them.` : '';
+    el.innerHTML = `<tr><td class="empty">No bars yet.${hidden}</td></tr>`;
+    return;
+  }
   el.innerHTML = `<thead><tr>
       <th>Bar</th><th>Status</th><th class="r">Visitors</th><th class="r">Songs</th><th class="r">Payments</th>
       <th class="r">Buy rate</th><th class="r">Revenue</th><th class="r">Bar's ${data.barSharePct}%</th><th>Last song</th><th class="r">Owed</th><th></th>
     </tr></thead><tbody>` + bars.map(b => `
     <tr>
       <td><div class="bar-name">${esc(b.name || b.venue_id.replace(/-/g, ' '))}</div><div class="bar-id">${esc(b.venue_id)}${b.name ? '' : ' · no account'}</div></td>
-      <td>${b.is_active === null ? '' : `<span class="pill ${b.is_active ? 'ok' : 'bad'}"><span class="dot"></span>${b.is_active ? 'On' : 'Off'}</span>`}<span class="pill ${b.spotify_connected ? 'ok' : 'bad'}"><span class="dot"></span>Spotify</span></td>
+      <td>${b.removed ? '<span class="pill"><span class="dot"></span>Removed</span>' : `${b.is_active === null ? '' : `<span class="pill ${b.is_active ? 'ok' : 'bad'}"><span class="dot"></span>${b.is_active ? 'On' : 'Off'}</span>`}<span class="pill ${b.spotify_connected ? 'ok' : 'bad'}"><span class="dot"></span>Spotify</span>`}</td>
       <td class="r num">${int(b.visitors)}</td>
       <td class="r num">${int(b.songs)}</td>
       <td class="r num">${int(b.payments)}</td>
@@ -499,7 +508,7 @@ function renderBars(bars) {
       <td class="r num">${eur(b.bar_share)}</td>
       <td>${ago(b.last_song)}</td>
       <td class="r num ${b.owed ? 'owed' : ''}">${eur(b.owed)}</td>
-      <td>${b.owed ? `<button class="btn ghost small" onclick="openPay('${esc(b.venue_id)}')">Mark paid</button> ` : ''}${b.name ? `<button class="btn ghost small" onclick="resetPassword('${esc(b.venue_id)}')">Reset password</button>` : ''}</td>
+      <td class="row-actions">${b.owed ? `<button class="btn ghost small" onclick="openPay('${esc(b.venue_id)}')">Mark paid</button> ` : ''}${b.name && !b.removed ? `<button class="btn ghost small" onclick="resetPassword('${esc(b.venue_id)}')">Reset password</button> ` : ''}${b.removed ? '' : `<button class="btn ghost small danger" onclick="removeBar('${esc(b.venue_id)}')">Remove</button>`}</td>
     </tr>`).join('') + '</tbody>';
 }
 
@@ -612,6 +621,19 @@ async function resetPassword(venueId) {
   try {
     const d = await adminPost('/api/admin/reset-password', { venueId });
     showCreds(`New password for ${d.venue.name}`, 'Send this to the bar. Their old password no longer works.', d);
+  } catch (err) {
+    alert(err.message);
+  }
+}
+async function removeBar(venueId) {
+  const b = data.bars.find(x => x.venue_id === venueId);
+  const name = barName(venueId);
+  const owed = b && b.owed ? `\n\nYou still owe ${name} ${eur(b.owed)}. That stays on the dashboard under "Show removed bars".` : '';
+  if (!confirm(`Remove ${name}?\n\nIts QR codes stop working, its login and Spotify are disconnected, and it's hidden from this dashboard. Its songs and payments are kept.${owed}`)) return;
+  try {
+    const d = await adminPost('/api/admin/remove-venue', { venueId });
+    if (!d.sheetSynced) alert(`${name} was removed, but the Zoros Links sheet couldn't be updated (${d.sheetError}). Mark it as Removed there by hand.`);
+    load();
   } catch (err) {
     alert(err.message);
   }

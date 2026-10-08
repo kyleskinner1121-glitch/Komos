@@ -12,7 +12,7 @@ const { Resend } = require('resend');
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const { runOutreachAgent } = require('./outreach/run');
 const crypto = require('crypto');
-const { syncBarLogin } = require('./links-sheet');
+const { syncBarLogin, markBarRemoved } = require('./links-sheet');
 
 // ── OUTREACH AGENT CONFIG ──
 // Spreadsheet ID from the Bar Tracker's URL (docs.google.com/spreadsheets/d/<THIS>/edit).
@@ -180,6 +180,14 @@ async function initDB() {
         paid_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    // Bars taken out of service (test bars, bars that left). Kept apart from venues so a bar
+    // with no account can be removed too, and its songs and payments stay in the history.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS removed_venues (
+        venue_id VARCHAR(255) PRIMARY KEY,
+        removed_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
     console.log('Database initialized');
   } catch (e) {
     console.error('DB init error:', e);
@@ -263,6 +271,7 @@ app.post('/api/venue/login', async (req, res) => {
     const venue = result.rows[0];
     const match = await bcrypt.compare(password, venue.password_hash);
     if (!match) return res.status(400).json({ error: 'Incorrect password' });
+    if (await venueIsRemoved(venue.venue_id)) return res.status(400).json({ error: 'This bar account has been closed. Contact Zoros.' });
     req.session.venueId = venue.venue_id;
     req.session.venueName = venue.name;
     // ── FIX: check spotify connection at login time ──
@@ -283,7 +292,7 @@ app.get('/api/venue/me', async (req, res) => {
   if (!req.session.venueId) return res.json({ loggedIn: false });
   try {
     const result = await pool.query('SELECT name, city, venue_id, is_active FROM venues WHERE venue_id = $1', [req.session.venueId]);
-    if (!result.rows.length) return res.json({ loggedIn: false });
+    if (!result.rows.length || await venueIsRemoved(req.session.venueId)) return res.json({ loggedIn: false });
     const venue = result.rows[0];
     const token = await getVenueToken(venue.venue_id);
     res.json({ loggedIn: true, venue: { name: venue.name, city: venue.city, venueId: venue.venue_id, isActive: venue.is_active, spotifyConnected: !!token } });
@@ -305,14 +314,22 @@ app.post('/api/venue/toggle', requireVenueAuth, async (req, res) => {
   }
 });
 
-// Is the bar's jukebox switched on? Unknown venues count as on (same as /api/venue/active).
+// Is the bar's jukebox switched on? Removed bars are always off; unknown venues count as on.
 async function venueIsActive(venueId) {
   try {
-    const r = await pool.query('SELECT is_active FROM venues WHERE venue_id = $1', [venueId]);
-    return !r.rows.length || r.rows[0].is_active;
+    const r = await pool.query(
+      `SELECT (SELECT is_active FROM venues WHERE venue_id = $1) AS active,
+              EXISTS (SELECT 1 FROM removed_venues WHERE venue_id = $1) AS removed`, [venueId]);
+    const { active, removed } = r.rows[0];
+    return !removed && active !== false;
   } catch (e) {
     return true;
   }
+}
+
+async function venueIsRemoved(venueId) {
+  const r = await pool.query('SELECT 1 FROM removed_venues WHERE venue_id = $1', [venueId]);
+  return r.rows.length > 0;
 }
 
 // ── VENUE MUSIC SETTINGS ──
@@ -333,13 +350,7 @@ app.post('/api/venue/settings', requireVenueAuth, async (req, res) => {
 // ── VENUE ACTIVE STATUS (for patron app) ──
 app.get('/api/venue/active', async (req, res) => {
   const venueId = req.query.venueId || 'default';
-  try {
-    const result = await pool.query('SELECT is_active FROM venues WHERE venue_id = $1', [venueId]);
-    if (!result.rows.length) return res.json({ isActive: true });
-    res.json({ isActive: result.rows[0].is_active });
-  } catch (e) {
-    res.json({ isActive: true });
-  }
+  res.json({ isActive: await venueIsActive(venueId) });
 });
 
 // ── VENUE REVENUE ──
@@ -476,6 +487,13 @@ function generatePassword() {
   return out.match(/.{4}/g).join('-');
 }
 
+// Log a bar out on every device. Never throws: callers have already made their change,
+// and the session table only exists once someone has logged in.
+async function logOutVenue(venueId) {
+  await pool.query(`DELETE FROM session WHERE sess->>'venueId' = $1`, [venueId])
+    .catch(e => { if (e.code !== '42P01') console.error('[logout] failed for', venueId, e.message); });
+}
+
 async function syncLoginToSheet(venue, password) {
   try {
     await syncBarLogin({ name: venue.name, venueId: venue.venue_id, email: venue.email, password, baseUrl: process.env.BASE_URL });
@@ -496,6 +514,7 @@ app.post('/api/admin/create-venue', async (req, res) => {
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(venueId)) return res.status(400).json({ error: 'Venue ID can only use lowercase letters, numbers and single hyphens' });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'That email doesn\'t look right' });
   try {
+    if (await venueIsRemoved(venueId)) return res.status(400).json({ error: 'That venue ID belonged to a removed bar. Pick a different one.' });
     const existing = await pool.query('SELECT email, venue_id FROM venues WHERE email = $1 OR venue_id = $2', [email, venueId]);
     if (existing.rows.length) {
       const taken = existing.rows[0].venue_id === venueId ? 'That venue ID' : 'That email';
@@ -526,12 +545,33 @@ app.post('/api/admin/reset-password', async (req, res) => {
       [hash, venueId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'No bar account with that venue ID' });
-    // Log the bar out everywhere. Never let this block the reset: the password has already changed,
-    // and the session table only exists once someone has logged in.
-    await pool.query(`DELETE FROM session WHERE sess->>'venueId' = $1`, [venueId])
-      .catch(e => { if (e.code !== '42P01') console.error('[reset-password] logout failed:', e.message); });
+    await logOutVenue(venueId);
     const venue = result.rows[0];
     res.json({ success: true, venue, password, ...(await syncLoginToSheet(venue, password)) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Take a bar out of service. Its songs, payments and payouts stay, so money owed is still tracked.
+// The jukebox closes for its QR codes, the login stops working, and its Spotify is disconnected.
+app.post('/api/admin/remove-venue', async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Unauthorized' });
+  const venueId = String((req.body && req.body.venueId) || '').trim();
+  if (!venueId) return res.status(400).json({ error: 'Which bar?' });
+  try {
+    await pool.query('INSERT INTO removed_venues (venue_id) VALUES ($1) ON CONFLICT DO NOTHING', [venueId]);
+    await pool.query('UPDATE venues SET is_active = false WHERE venue_id = $1', [venueId]);
+    await pool.query('DELETE FROM venue_tokens WHERE venue_id = $1', [venueId]);
+    await logOutVenue(venueId);
+    let sheet = { sheetSynced: true };
+    try {
+      await markBarRemoved(venueId);
+    } catch (e) {
+      console.error('[links-sheet] remove sync failed:', e.message);
+      sheet = { sheetSynced: false, sheetError: e.message };
+    }
+    res.json({ success: true, ...sheet });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -566,6 +606,7 @@ app.get('/api/admin/stats', async (req, res) => {
   const days = { '24h': 1, '7d': 7, '30d': 30 }[req.query.range] || null; // null = all time
   const liveOnly = req.query.liveOnly === 'true';
   const includeDemo = req.query.includeDemo === 'true';
+  const showRemoved = req.query.showRemoved === 'true';
   // Shared filters: $1 days, $2 liveOnly, $3 includeDemo, $4 test venue ids
   // Payment queries: $1 days, $2 liveOnly, $3 includeDemo, $4 test venue ids
   const params = [days, liveOnly, includeDemo, TEST_VENUES];
@@ -581,7 +622,7 @@ app.get('/api/admin/stats', async (req, res) => {
     const q = (sql, ps = params) => pool.query(sql, ps).then(r => r.rows);
     const [
       totals, payByVenue, songsByVenue, visitsByVenue, venues, owedRows,
-      nightly, bySrcVisits, bySrcPays, recentSongs, topSongs, apps, payouts, modeCounts
+      nightly, bySrcVisits, bySrcPays, recentSongs, topSongs, apps, payouts, modeCounts, removedRows
     ] = await Promise.all([
       q(`SELECT COUNT(*)::int AS payments,
                 COALESCE(SUM(p.amount), 0)::int AS revenue,
@@ -627,7 +668,8 @@ app.get('/api/admin/stats', async (req, res) => {
       q(`SELECT venue_id, amount, note, paid_at FROM venue_payouts ORDER BY paid_at DESC LIMIT 20`, []),
       q(`SELECT COUNT(*) FILTER (WHERE livemode = true)::int AS live,
                 COUNT(*) FILTER (WHERE livemode IS NOT TRUE)::int AS test
-         FROM processed_payments WHERE amount IS NOT NULL`, [])
+         FROM processed_payments WHERE amount IS NOT NULL`, []),
+      q(`SELECT venue_id FROM removed_venues`, [])
     ]);
 
     const t = totals[0];
@@ -651,11 +693,15 @@ app.get('/api/admin/stats', async (req, res) => {
       if (!r.venue_id || (!includeDemo && TEST_VENUES.includes(r.venue_id))) return;
       Object.assign(row(r.venue_id), { live_revenue: r.live_revenue, paid_out: r.paid_out });
     });
-    const bars = Object.values(byId).map(b => ({
+    const removed = new Set(removedRows.map(r => r.venue_id));
+    const allBars = Object.values(byId).map(b => ({
       ...b,
+      removed: removed.has(b.venue_id),
       bar_share: Math.round(b.revenue * BAR_SHARE),
       owed: Math.max(0, Math.round(b.live_revenue * BAR_SHARE) - b.paid_out)
     })).sort((a, b) => b.revenue - a.revenue || b.songs - a.songs);
+    // Removed bars are hidden unless asked for, but money still owed to them stays in the totals
+    const bars = showRemoved ? allBars : allBars.filter(b => !b.removed);
 
     // QR sources: merge visits and payments on the tag
     const src = {};
@@ -666,13 +712,14 @@ app.get('/api/admin/stats', async (req, res) => {
     const songs = songsByVenue.reduce((n, r) => n + r.songs, 0);
     res.json({
       generatedAt: new Date().toISOString(),
-      filters: { range: req.query.range || 'all', liveOnly, includeDemo },
+      filters: { range: req.query.range || 'all', liveOnly, includeDemo, showRemoved },
+      removedCount: allBars.filter(b => b.removed).length,
       barSharePct: BAR_SHARE * 100,
       totals: {
         revenue: t.revenue, payments: t.payments, bundles: t.bundles, songs, visitors,
         barShare, fees: t.fees, feesEstimated: t.fees_estimated,
         zorosNet: t.revenue - barShare - t.fees,
-        owedNow: bars.reduce((n, b) => n + b.owed, 0)
+        owedNow: allBars.reduce((n, b) => n + b.owed, 0)
       },
       paymentModes: modeCounts[0],
       bars,
@@ -1120,22 +1167,65 @@ setTimeout(() => {
   setInterval(runScheduledOutreach, 6 * 60 * 60 * 1000);
 }, 60000);
 
-app.get('/auth/spotify', (req, res) => {
-  const venueId = req.query.venueId || req.session.venueId || 'default';
+// ── SPOTIFY CONNECT ──
+// Only a bar logged in to its own dashboard, or the Zoros team (via a one-time link from /setup),
+// can connect Spotify for a bar. The bar comes from the login or the link, never from the URL,
+// and the callback only accepts a state this server handed out in the last 10 minutes.
+// Kept in memory: a restart mid-connection just means clicking Connect again.
+const spotifyStates = new Map();   // state  -> { venueId, returnTo, expires }
+const spotifyTickets = new Map();  // ticket -> { venueId, expires }
+
+function remember(map, value, minutes) {
+  const now = Date.now();
+  for (const [k, v] of map) if (v.expires < now) map.delete(k);
+  const key = crypto.randomBytes(24).toString('hex');
+  map.set(key, { ...value, expires: now + minutes * 60 * 1000 });
+  return key;
+}
+function takeFresh(map, key) {
+  const v = key && map.get(String(key));
+  if (!v) return null;
+  map.delete(String(key));
+  return v.expires >= Date.now() ? v : null;
+}
+
+// Team-only: a link that connects Spotify for one bar, valid for 5 minutes and usable once
+app.post('/api/admin/spotify-link', async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Unauthorized' });
+  const venueId = String((req.body && req.body.venueId) || '').trim();
+  if (!/^[a-z0-9-]+$/.test(venueId)) return res.status(400).json({ error: 'Venue ID can only contain lowercase letters, numbers and hyphens' });
+  if (await venueIsRemoved(venueId)) return res.status(400).json({ error: 'That bar has been removed' });
+  res.json({ success: true, url: `/auth/spotify?ticket=${remember(spotifyTickets, { venueId }, 5)}` });
+});
+
+app.get('/auth/spotify', async (req, res) => {
+  let venueId, returnTo;
+  const ticket = takeFresh(spotifyTickets, req.query.ticket);
+  if (ticket) {
+    venueId = ticket.venueId; returnTo = 'setup';
+  } else if (req.session.venueId && !(await venueIsRemoved(req.session.venueId))) {
+    venueId = req.session.venueId; returnTo = 'bar';
+  } else {
+    return res.redirect('/bar?error=login_required');
+  }
   const scopes = 'user-modify-playback-state user-read-playback-state user-read-recently-played';
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: process.env.SPOTIFY_CLIENT_ID,
     scope: scopes,
     redirect_uri: `${process.env.BASE_URL}/auth/spotify/callback`,
-    state: venueId
+    state: remember(spotifyStates, { venueId, returnTo }, 10)
   });
   res.redirect(`https://accounts.spotify.com/authorize?${params}`);
 });
 
 app.get('/auth/spotify/callback', async (req, res) => {
-  const { code, state: venueId } = req.query;
-  if (!code) return res.redirect('/bar?error=no_code');
+  const pending = takeFresh(spotifyStates, req.query.state);
+  if (!pending) return res.redirect('/bar?error=link_expired');
+  const { venueId, returnTo } = pending;
+  const fail = (err) => res.redirect(returnTo === 'setup' ? `/setup?error=${err}` : `/bar?error=${err}`);
+  const { code } = req.query;
+  if (!code) return fail('no_code');
   try {
     const creds = Buffer.from(`${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`).toString('base64');
     const r = await fetch('https://accounts.spotify.com/api/token', {
@@ -1148,19 +1238,21 @@ app.get('/auth/spotify/callback', async (req, res) => {
       })
     });
     const data = await r.json();
-    if (!data.access_token) return res.redirect('/bar?error=no_token');
+    if (!data.access_token) return fail('no_token');
     await saveVenueToken(venueId, data.access_token, data.refresh_token, data.expires_in);
 
-    // Restore venue session
+    if (returnTo === 'setup') return res.redirect(`/setup?success=1&venueId=${encodeURIComponent(venueId)}`);
+
+    // The bar started this from its logged-in dashboard. The callback can land on a different
+    // address than where they logged in, so log them in here too.
     const venueResult = await pool.query('SELECT name FROM venues WHERE venue_id = $1', [venueId]);
     if (venueResult.rows.length) {
       req.session.venueId = venueId;
       req.session.venueName = venueResult.rows[0].name;
     }
-
     res.redirect(`/bar?spotify=connected`);
   } catch (e) {
-    res.redirect('/bar?error=auth_failed');
+    fail('auth_failed');
   }
 });
 

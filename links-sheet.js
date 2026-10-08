@@ -27,25 +27,38 @@ function colLetter(i) {
   return s;
 }
 
-// Updates the bar's row (matched on Venue ID), or adds a row under the bars table if it isn't there yet.
-async function syncBarLogin({ name, venueId, email, password, baseUrl }) {
-  const sheets = getSheetsClient();
+// Reads the Links tab and finds the bars table's header row and the bar's row (-1 if missing).
+async function findBarRow(sheets, venueId) {
   const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${TAB}!A1:Z1000` });
   const rows = res.data.values || [];
-
   const headerIdx = rows.findIndex(r => r.includes('Venue ID') && r.includes('Password'));
   if (headerIdx === -1) throw new Error('No bars table on the Links tab (a header row with "Venue ID" and "Password")');
   const header = rows[headerIdx];
   const col = h => header.indexOf(h);
+  const rowIdx = rows.findIndex((r, i) => i > headerIdx && r[col('Venue ID')] === venueId);
+  return { rows, headerIdx, col, rowIdx };
+}
 
-  let rowIdx = rows.findIndex((r, i) => i > headerIdx && r[col('Venue ID')] === venueId);
+const cellRef = (col, h, rowIdx, value) =>
+  col(h) === -1 ? null : { range: `${TAB}!${colLetter(col(h))}${rowIdx + 1}`, values: [[value]] };
+
+async function writeCells(sheets, data, valueInputOption) {
+  data = data.filter(Boolean);
+  if (data.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { valueInputOption, data } });
+}
+
+// Updates the bar's row (matched on Venue ID), or adds a row under the bars table if it isn't there yet.
+async function syncBarLogin({ name, venueId, email, password, baseUrl }) {
+  const sheets = getSheetsClient();
+  const { rows, headerIdx, col, rowIdx: found } = await findBarRow(sheets, venueId);
+  let rowIdx = found;
   const isNew = rowIdx === -1;
   if (isNew) {
     rowIdx = headerIdx + 1;
     while (rows[rowIdx] && rows[rowIdx].some(v => v)) rowIdx++;
   }
 
-  const cell = (h, value) => col(h) === -1 ? null : { range: `${TAB}!${colLetter(col(h))}${rowIdx + 1}`, values: [[value]] };
+  const cell = (h, value) => cellRef(col, h, rowIdx, value);
   // RAW so a name or password is never read as a formula, number or date
   const raw = [cell('Login email', email), cell('Password', password)];
   // Links go in as typed so Sheets makes them clickable
@@ -60,13 +73,18 @@ async function syncBarLogin({ name, venueId, email, password, baseUrl }) {
     }
   }
 
-  const write = (data, valueInputOption) => data.some(Boolean) && sheets.spreadsheets.values.batchUpdate({
-    spreadsheetId: SHEET_ID,
-    requestBody: { valueInputOption, data: data.filter(Boolean) }
-  });
-  await write(raw, 'RAW');
-  await write(typed, 'USER_ENTERED');
+  await writeCells(sheets, raw, 'RAW');
+  await writeCells(sheets, typed, 'USER_ENTERED');
   return { row: rowIdx + 1, added: isNew };
 }
 
-module.exports = { syncBarLogin };
+// Marks a removed bar's row: Status "Removed" and the password cleared. No row, nothing to do.
+async function markBarRemoved(venueId) {
+  const sheets = getSheetsClient();
+  const { col, rowIdx } = await findBarRow(sheets, venueId);
+  if (rowIdx === -1) return { row: null };
+  await writeCells(sheets, [cellRef(col, 'Status', rowIdx, 'Removed'), cellRef(col, 'Password', rowIdx, '')], 'RAW');
+  return { row: rowIdx + 1 };
+}
+
+module.exports = { syncBarLogin, markBarRemoved };
