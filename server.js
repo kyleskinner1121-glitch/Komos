@@ -1235,6 +1235,9 @@ app.get('/auth/spotify', async (req, res) => {
   if (ticket) {
     venueId = ticket.venueId; returnTo = 'setup';
   } else if (req.session.venueId && !(await venueIsRemoved(req.session.venueId))) {
+    // A link for a different bar than the one logged in: don't quietly connect the logged-in bar
+    const asked = req.query.venueId && String(req.query.venueId);
+    if (asked && asked !== req.session.venueId) return res.redirect(`/bar?venue=${encodeURIComponent(asked)}`);
     venueId = req.session.venueId; returnTo = 'bar';
   } else {
     return res.redirect('/bar?error=login_required');

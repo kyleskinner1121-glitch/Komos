@@ -1113,6 +1113,18 @@
 
     if (!data.loggedIn) { showLogin(); return; }
 
+    // The link is for a different bar than the one logged in on this device: sign out and ask again,
+    // so nobody manages (or connects Spotify for) the wrong bar by accident
+    const linkVenue = params.get('venue');
+    if (linkVenue && linkVenue !== data.venue.venueId) {
+      await fetch('/api/venue/logout', { method: 'POST' });
+      showLogin();
+      document.getElementById('login-error').textContent = currentLang === 'es'
+        ? `Habías iniciado sesión como ${data.venue.name}. Inicia sesión con la cuenta de este local.`
+        : `You were signed in as ${data.venue.name}. Sign in with this bar's account.`;
+      return;
+    }
+
     venueData = data.venue;
 
     if (spotifyConnected) { showDashboard(); return; }
