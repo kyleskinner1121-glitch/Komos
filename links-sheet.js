@@ -92,4 +92,45 @@ async function setBarStatus(venueId, status, { clearPassword = false } = {}) {
 
 const markBarRemoved = venueId => setBarStatus(venueId, 'Removed', { clearPassword: true });
 
-module.exports = { syncBarLogin, markBarRemoved, setBarStatus };
+// ── USERS TAB ──
+// One row per patron account: Email | Signed up | Credits left | Songs played with credits | Last song played.
+// Row 1 is the header. Passwords are never written here; patrons choose their own.
+const USERS_TAB = 'Users';
+
+// Sheets shows times as written, so write them in Madrid time: "2026-10-08 15:42"
+const madrid = d => d ? new Date(d).toLocaleString('sv-SE', { timeZone: 'Europe/Madrid' }).slice(0, 16) : '';
+const userRow = u => [u.email, madrid(u.created_at), Number(u.credits) || 0, Number(u.songs_used) || 0, madrid(u.last_song)];
+
+// Updates the patron's row (matched on email), or appends one if they aren't listed yet
+async function upsertUser(user) {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${USERS_TAB}!A:A` });
+  const emails = (res.data.values || []).map(r => String(r[0] || '').toLowerCase());
+  const idx = emails.indexOf(String(user.email).toLowerCase());
+  if (idx > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID, range: `${USERS_TAB}!A${idx + 1}:E${idx + 1}`,
+      valueInputOption: 'RAW', requestBody: { values: [userRow(user)] }
+    });
+  } else {
+    // append adds the row atomically, so two sign-ups at once can't land on the same row
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID, range: `${USERS_TAB}!A:E`,
+      valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [userRow(user)] }
+    });
+  }
+}
+
+// Rewrites every patron row from the database (for existing accounts, or to repair the tab)
+async function syncAllUsers(users) {
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: `${USERS_TAB}!A2:E` });
+  if (users.length) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID, range: `${USERS_TAB}!A2`,
+      valueInputOption: 'RAW', requestBody: { values: users.map(userRow) }
+    });
+  }
+}
+
+module.exports = { syncBarLogin, markBarRemoved, setBarStatus, upsertUser, syncAllUsers };

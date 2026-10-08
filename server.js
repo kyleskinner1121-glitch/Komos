@@ -12,7 +12,7 @@ const { Resend } = require('resend');
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const { runOutreachAgent } = require('./outreach/run');
 const crypto = require('crypto');
-const { syncBarLogin, markBarRemoved, setBarStatus } = require('./links-sheet');
+const { syncBarLogin, markBarRemoved, setBarStatus, upsertUser, syncAllUsers } = require('./links-sheet');
 
 // ── OUTREACH AGENT CONFIG ──
 // Spreadsheet ID from the Bar Tracker's URL (docs.google.com/spreadsheets/d/<THIS>/edit).
@@ -223,6 +223,23 @@ function requireVenueAuth(req, res, next) {
   next();
 }
 
+// ── PATRON ACCOUNTS → ZOROS LINKS "Users" TAB ──
+// Runs after the response is sent and never throws, so a slow or failing sheet can't
+// hold up a sign-up or a song. The database stays the record; the tab mirrors it.
+const USER_SHEET_SQL = `
+  SELECT u.email, u.created_at, u.credits,
+         (SELECT COUNT(*) FROM songs s WHERE s.user_id = u.id) AS songs_used,
+         (SELECT MAX(s.added_at) FROM songs s WHERE s.user_id = u.id) AS last_song
+  FROM users u`;
+async function syncUserToSheet(userId) {
+  try {
+    const r = await pool.query(`${USER_SHEET_SQL} WHERE u.id = $1`, [userId]);
+    if (r.rows[0]) await upsertUser(r.rows[0]);
+  } catch (e) {
+    console.error('[links-sheet] user sync failed:', e.message);
+  }
+}
+
 // ── USER AUTH ROUTES ──
 app.post('/api/auth/signup', async (req, res) => {
   const { email, password } = req.body;
@@ -239,6 +256,7 @@ app.post('/api/auth/signup', async (req, res) => {
     req.session.userId = result.rows[0].id;
     req.session.email = result.rows[0].email;
     res.json({ success: true, user: { email: result.rows[0].email, credits: result.rows[0].credits } });
+    syncUserToSheet(result.rows[0].id);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -626,6 +644,18 @@ app.post('/api/admin/restore-venue', async (req, res) => {
   }
 });
 
+// Fill the Users tab from the database: existing accounts, or to repair the tab
+app.post('/api/admin/sync-users', async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const r = await pool.query(`${USER_SHEET_SQL} ORDER BY u.created_at`);
+    await syncAllUsers(r.rows);
+    res.json({ success: true, count: r.rows.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── PAGE VISIT TRACKING (patron app opens) ──
 app.post('/api/track/visit', async (req, res) => {
   const { venueId, src, visitorId } = req.body || {};
@@ -874,6 +904,7 @@ app.post('/api/bundle/confirm', async (req, res) => {
       [credits, req.session.userId]
     );
     res.json({ success: true, credits: result.rows[0].credits });
+    syncUserToSheet(req.session.userId);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -910,6 +941,7 @@ app.post('/api/queue/use-credit', async (req, res) => {
       [venue_id]
     );
     res.json({ success: true, position: parseInt(position.rows[0].count), addedToSpotify, creditsRemaining: credits.rows[0].credits });
+    syncUserToSheet(req.session.userId);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

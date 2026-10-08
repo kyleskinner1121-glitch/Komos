@@ -163,6 +163,7 @@
       <div class="meta">
         <span id="updated">Loading…</span>
         <button class="btn ghost small" onclick="load()">Refresh</button>
+        <button class="btn ghost small" id="syncUsersBtn" onclick="syncUsers()" title="Copy every patron account into the Users tab of the Zoros Links sheet">Sync patron accounts</button>
         <button class="btn ghost small" onclick="logout()">Log out</button>
       </div>
     </header>
@@ -624,6 +625,18 @@ async function resetPassword(venueId) {
   } catch (err) {
     alert(err.message);
   }
+}
+async function syncUsers() {
+  const btn = document.getElementById('syncUsersBtn');
+  btn.disabled = true; btn.textContent = 'Syncing…';
+  try {
+    const d = await adminPost('/api/admin/sync-users', {});
+    btn.textContent = `Synced ${d.count} account${d.count === 1 ? '' : 's'}`;
+  } catch (err) {
+    alert(`Couldn't update the Users tab: ${err.message}`);
+    btn.textContent = 'Sync patron accounts';
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = 'Sync patron accounts'; }, 4000);
 }
 async function removeBar(venueId) {
   const b = data.bars.find(x => x.venue_id === venueId);
