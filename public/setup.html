@@ -62,6 +62,12 @@
     <div class="input-hint">Lowercase letters, numbers and hyphens only.</div>
   </div>
 
+  <div class="input-group" id="keyGroup">
+    <label class="input-label">Zoros team admin key</label>
+    <input type="password" id="adminKey" autocomplete="current-password">
+    <div class="input-hint">Only the Zoros team can connect Spotify here. Bars connect from their own dashboard.</div>
+  </div>
+
   <button class="btn-spotify" id="connectBtn" onclick="connectSpotify()">
     ♫ Connect Spotify Account
   </button>
@@ -120,14 +126,34 @@ window.addEventListener('load', () => {
   }
 });
 
-function connectSpotify() {
+// Same key the team dashboard remembers in this browser, so it's only asked for once
+const savedKey = (() => { try { return localStorage.getItem('zoros_admin_key') || ''; } catch (e) { return ''; } })();
+if (savedKey) document.getElementById('keyGroup').style.display = 'none';
+
+async function connectSpotify() {
   const venueId = document.getElementById('venueId').value.trim();
+  const key = savedKey || document.getElementById('adminKey').value.trim();
   if (!venueId) { alert('Please enter a venue ID first'); return; }
   if (!/^[a-z0-9-]+$/.test(venueId)) { alert('Venue ID can only contain lowercase letters, numbers and hyphens'); return; }
+  if (!key) { alert('Enter the Zoros team admin key'); return; }
   const btn = document.getElementById('connectBtn');
   btn.disabled = true;
   btn.textContent = 'Connecting...';
-  window.location.href = `/auth/spotify?venueId=${venueId}`;
+  try {
+    const r = await fetch('/api/admin/spotify-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+      body: JSON.stringify({ venueId })
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(r.status === 403 ? 'That admin key didn\'t work' : d.error);
+    if (!savedKey) { try { localStorage.setItem('zoros_admin_key', key); } catch (e) {} }
+    window.location.href = d.url;
+  } catch (e) {
+    alert(e.message);
+    btn.disabled = false;
+    btn.textContent = '♫ Connect Spotify Account';
+  }
 }
 
 function showSuccess(venueId) {
