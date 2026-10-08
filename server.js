@@ -366,7 +366,9 @@ app.post('/api/venue/settings', requireVenueAuth, async (req, res) => {
 // ── VENUE ACTIVE STATUS (for patron app) ──
 app.get('/api/venue/active', async (req, res) => {
   const venueId = req.query.venueId || 'default';
-  res.json({ isActive: await venueIsActive(venueId) });
+  // The bar's name is shown in the patron page header; bars without an account have none
+  const r = await pool.query('SELECT name FROM venues WHERE venue_id = $1', [venueId]).catch(() => ({ rows: [] }));
+  res.json({ isActive: await venueIsActive(venueId), name: r.rows[0] ? r.rows[0].name : null });
 });
 
 // ── VENUE REVENUE ──
