@@ -92,6 +92,24 @@
   .header:has(#creditsBadge[style*="block"]) .logo .wordmark { width: 78px; }
   @media (min-width: 341px) { .header { gap: 6px; } }
   .header-right { display: flex; align-items: center; gap: 10px; }
+  /* Small phones: tighten the header so the language button stays on screen with credits showing */
+  @media (max-width: 400px) {
+    .header { padding: 12px 14px; }
+    .logo-wrap { gap: 8px; }
+    .logo-wrap .brand-icon { width: 34px; height: 34px; }
+    .logo span { letter-spacing: 2px; }
+    .header-right { gap: 6px; }
+    .header-right .credits-badge { padding: 6px 9px; }
+    .header-right .queue-pill { padding: 6px 11px; }
+    .header-right .lang-globe-btn { padding: 5px 8px; }
+  }
+  @media (max-width: 350px) {
+    #currentLangLabel { display: none; }
+    .header { padding: 12px 10px; }
+    .header-right .credits-badge { padding: 6px 7px; font-size: 10px; }
+    .header-right .queue-pill { padding: 6px 9px; }
+    .pricing-grid .pricing-card { padding: 12px 6px; }
+  }
   .queue-pill { background: var(--orange); color: var(--white); font-size: 11px; font-weight: 500; padding: 6px 14px; border-radius: 20px; cursor: pointer; letter-spacing: 0.5px; border: none; }
   .credits-badge { background: rgba(29,185,84,0.2); border: 1px solid rgba(29,185,84,0.4); color: #1db954; font-size: 11px; font-weight: 500; padding: 6px 12px; border-radius: 20px; display: none; cursor: pointer; }
   .queue-count-badge { background: white; color: var(--orange); border-radius: 50%; width: 18px; height: 18px; font-size: 10px; display: inline-flex; align-items: center; justify-content: center; margin-left: 4px; font-weight: 700; }
@@ -101,10 +119,10 @@
   .hero h1 em { font-style: normal; color: var(--orange); display: block; }
   .hero p { font-size: 13px; color: var(--muted); font-weight: 300; letter-spacing: 0.5px; margin-bottom: 16px; }
   .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 4px; }
-  .pricing-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 10px; text-align: center; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+  .pricing-card { min-width: 0; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 10px; text-align: center; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
   .pricing-card:hover { border-color: rgba(255,255,255,0.25); background: rgba(255,255,255,0.08); }
   .pricing-card:active { transform: scale(0.97); }
-  .pricing-songs { font-family: 'Bebas Neue', sans-serif; font-size: 22px; color: var(--orange); letter-spacing: 1px; line-height: 1; }
+  .pricing-songs { font-family: 'Bebas Neue', sans-serif; font-size: clamp(17px, 5.6vw, 22px); color: var(--orange); letter-spacing: 1px; line-height: 1; }
   .pricing-price { font-size: 15px; font-weight: 500; color: var(--green); margin-top: 4px; }
   .pricing-per { font-size: 10px; color: var(--muted); margin-top: 2px; font-weight: 300; }
   .pricing-save { font-size: 10px; color: var(--green); margin-top: 2px; }
