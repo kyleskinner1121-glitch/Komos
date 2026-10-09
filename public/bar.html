@@ -480,6 +480,9 @@
 
   .revenue-amount .eur { font-size: 28px; color: var(--orange); }
   .revenue-period { font-size: 14px; color: var(--text-muted); }
+  .rev-breakdown { margin: 18px auto 0; max-width: 340px; text-align: left; font-size: 13px; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 14px; }
+  .rev-breakdown .row { display: flex; justify-content: space-between; padding: 3px 0; }
+  .rev-breakdown .row.total { color: var(--text, #fff); font-weight: 600; border-top: 1px solid var(--border); margin-top: 6px; padding-top: 8px; }
 
   .revenue-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
@@ -919,7 +922,8 @@
     </div>
     <div class="revenue-hero">
       <div class="revenue-amount"><span class="eur">€</span><span id="rev-amount">0.00</span></div>
-      <div class="revenue-period" id="rev-period-label">Today</div>
+      <div class="revenue-period"><span data-en="Your earnings" data-es="Tus ganancias">Your earnings</span> · <span id="rev-period-label">Today</span></div>
+      <div class="rev-breakdown" id="rev-breakdown"></div>
     </div>
     <div class="revenue-stats">
       <div class="stat-card">
@@ -930,7 +934,7 @@
       <div class="stat-card">
         <div class="stat-label" data-en="Avg per song" data-es="Media por canción">Avg per song</div>
         <div class="stat-value" id="rev-avg">€0.00</div>
-        <div class="stat-sub" data-en="revenue per request" data-es="ingresos por solicitud">revenue per request</div>
+        <div class="stat-sub" data-en="your earnings per paid song" data-es="tus ganancias por canción pagada">your earnings per paid song</div>
       </div>
     </div>
   </div>
@@ -1332,9 +1336,19 @@
       month:   currentLang === 'es' ? 'Este mes' : 'This month',
       allTime: currentLang === 'es' ? 'Todo el tiempo' : 'All time'
     };
-    const avg = d.count > 0 ? (d.total / d.count / 100).toFixed(2) : '0.00';
+    // Show what the bar actually earns: guests' payments minus Stripe's fee and Zoros's share
+    const es = currentLang === 'es';
+    const earnings = d.earnings ?? d.total;
+    const eur = c => `€${(c / 100).toFixed(2)}`;
+    const avg = d.payments > 0 ? (earnings / d.payments / 100).toFixed(2) : '0.00';
+    const zorosPct = 100 - (revenueData.barSharePct || 75);
+    document.getElementById('rev-breakdown').innerHTML = d.gross > 0 ? `
+      <div class="row"><span>${es ? 'Pagado por los clientes' : 'Paid by guests'}</span><span>${eur(d.gross)}</span></div>
+      <div class="row"><span>${es ? 'Comisión de Stripe' : 'Stripe card fees'}</span><span>−${eur(d.fees)}</span></div>
+      <div class="row"><span>${es ? `Zoros (${zorosPct}%)` : `Zoros (${zorosPct}%)`}</span><span>−${eur(d.zoros)}</span></div>
+      <div class="row total"><span>${es ? 'Tus ganancias' : 'Your earnings'}</span><span>${eur(earnings)}</span></div>` : '';
 
-    document.getElementById('rev-amount').textContent = (d.total / 100).toFixed(2);
+    document.getElementById('rev-amount').textContent = (earnings / 100).toFixed(2);
     document.getElementById('rev-period-label').textContent = labels[currentRevPeriod];
     document.getElementById('rev-count').textContent = d.count;
     document.getElementById('rev-avg').textContent = `€${avg}`;
