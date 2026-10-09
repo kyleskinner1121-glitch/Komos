@@ -1771,6 +1771,58 @@ app.post('/api/queue/add', async (req, res) => {
   }
 });
 
+// ── WHAT ACTUALLY PLAYS NEXT (bar's own queued songs + Zoros requests) ──
+// Spotify plays songs the bartender queued before Zoros requests, so guests should see them.
+// Spotify's queue list doesn't say which songs were queued by hand and which are just the
+// playlist continuing, but Zoros songs always go to the end of the hand-queued part. So
+// everything up to the last Zoros song is the real "up next" line; after that is the playlist.
+// Remembered for 10s per bar, since every guest's phone asks every 10s.
+const upcomingCache = new Map();
+async function getUpcoming(venueId, zorosRows) {
+  if (!zorosRows.length) return [];
+  const hit = upcomingCache.get(venueId);
+  if (hit && Date.now() - hit.at < 10000) return hit.list;
+  const token = await getVenueToken(venueId);
+  if (!token) return null;
+  try {
+    const r = await fetch('https://api.spotify.com/v1/me/player/queue', { headers: { Authorization: `Bearer ${token}` } });
+    if (r.status !== 200) return null;
+    const data = await r.json();
+    const spotifyQueue = (data.queue || []).filter(t => t && t.uri);
+
+    // Zoros songs already handed to Spotify, matched by song (a song can be requested twice)
+    const sent = zorosRows.filter(s => s.added_to_spotify);
+    const remaining = {};
+    sent.forEach(s => { remaining[s.uri] = (remaining[s.uri] || 0) + 1; });
+    let lastZoros = -1, left = sent.length;
+    for (let i = 0; i < spotifyQueue.length && left > 0; i++) {
+      if (remaining[spotifyQueue[i].uri] > 0) { remaining[spotifyQueue[i].uri]--; left--; lastZoros = i; }
+    }
+
+    const counts = {};
+    sent.forEach(s => { counts[s.uri] = (counts[s.uri] || 0) + 1; });
+    const list = spotifyQueue.slice(0, lastZoros + 1).map(t => {
+      const zoros = counts[t.uri] > 0;
+      if (zoros) counts[t.uri]--;
+      return {
+        name: t.name,
+        artist: (t.artists || []).map(a => a.name).join(', '),
+        image: (t.album && t.album.images && (t.album.images[2] || t.album.images[0]) || {}).url || '',
+        source: zoros ? 'zoros' : 'bar'
+      };
+    });
+    // Requests Spotify hasn't got yet (music paused) or that didn't show in its list go last
+    zorosRows.filter(s => !s.added_to_spotify || counts[s.uri] > 0).forEach(s => {
+      if (s.added_to_spotify) counts[s.uri]--;
+      list.push({ name: s.name, artist: s.artist, image: s.image, source: 'zoros' });
+    });
+    upcomingCache.set(venueId, { list, at: Date.now() });
+    return list;
+  } catch (e) {
+    return null;
+  }
+}
+
 app.get('/api/queue', async (req, res) => {
   const venueId = req.query.venueId || 'default';
   try {
@@ -1782,9 +1834,11 @@ app.get('/api/queue', async (req, res) => {
       "SELECT * FROM songs WHERE venue_id = $1 AND status = 'played' ORDER BY played_at DESC LIMIT 5",
       [venueId]
     );
+    const upcoming = await getUpcoming(venueId, queue.rows);
     res.json({
       queue: queue.rows.map(s => ({ id: s.id, name: s.name, artist: s.artist, image: s.image, uri: s.uri, venueId: s.venue_id, addedAt: s.added_at })),
-      played: played.rows.map(s => ({ id: s.id, name: s.name, artist: s.artist, image: s.image, uri: s.uri, venueId: s.venue_id, playedAt: s.played_at }))
+      played: played.rows.map(s => ({ id: s.id, name: s.name, artist: s.artist, image: s.image, uri: s.uri, venueId: s.venue_id, playedAt: s.played_at })),
+      upcoming // null if Spotify couldn't be asked; the app then shows just the Zoros requests
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
