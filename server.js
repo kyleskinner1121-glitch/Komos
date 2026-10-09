@@ -1596,13 +1596,15 @@ app.get('/api/search', async (req, res) => {
       preview_url: t.preview_url
     }));
 
-    let hidden = 0;
+    let hidden = 0, hiddenExplicit = 0;
     if (filtering) {
       const allowed = await Promise.all(tracks.map(t => trackAllowed(t, settings)));
       hidden = allowed.filter(a => !a).length;
+      // How many were hidden for explicit lyrics (the rest were the genre filter), so guests get the right reason
+      hiddenExplicit = tracks.filter((t, i) => !allowed[i] && settings.blockExplicit && t.explicit).length;
       tracks = tracks.filter((t, i) => allowed[i]);
     }
-    res.json({ tracks: tracks.slice(0, 10), hidden });
+    res.json({ tracks: tracks.slice(0, 10), hidden, hiddenExplicit, hiddenGenre: hidden - hiddenExplicit });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
