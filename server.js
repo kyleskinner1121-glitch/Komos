@@ -196,6 +196,10 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    // When each song was handed to Spotify. Spotify plays its queue in that order, so this is
+    // the real play order (older rows sent before this column existed fall back to added_at).
+    await pool.query(`ALTER TABLE songs ADD COLUMN IF NOT EXISTS sent_at TIMESTAMP`);
+    await pool.query(`UPDATE songs SET sent_at = added_at WHERE added_to_spotify AND sent_at IS NULL`);
     await pool.query(`ALTER TABLE processed_payments
       ADD COLUMN IF NOT EXISTS split_to VARCHAR(255),
       ADD COLUMN IF NOT EXISTS bar_amount INTEGER`);
@@ -1045,12 +1049,12 @@ app.post('/api/queue/use-credit', async (req, res) => {
       return res.status(400).json({ error: 'No credits remaining' });
     }
     await pool.query('UPDATE users SET credits = credits - 1 WHERE id = $1', [req.session.userId]);
-    const addedToSpotify = await addToSpotifyQueue(venue_id, uri);
     const id = Date.now();
     await pool.query(`
       INSERT INTO songs (id, track_id, name, artist, image, uri, venue_id, user_id, added_to_spotify, amount_paid)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-    `, [id, track_id, track_name, artist, image, uri, venue_id, req.session.userId, addedToSpotify, 99]);
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE, $9)
+    `, [id, track_id, track_name, artist, image, uri, venue_id, req.session.userId, 99]);
+    const addedToSpotify = await sendPendingToSpotify(venue_id, id);
     const credits = await pool.query('SELECT credits FROM users WHERE id = $1', [req.session.userId]);
     const position = await pool.query(
       "SELECT COUNT(*) FROM songs WHERE venue_id = $1 AND status = 'queued'",
@@ -1233,7 +1237,8 @@ async function getVenueToken(venueId) {
     });
     const data = await r.json();
     if (!data.access_token) return null;
-    await saveVenueToken(venueId, data.access_token, tokenData.refresh_token, data.expires_in);
+    // Spotify sometimes sends a new refresh token; the old one may then stop working
+    await saveVenueToken(venueId, data.access_token, data.refresh_token || tokenData.refresh_token, data.expires_in);
     return data.access_token;
   } catch (e) {
     return null;
@@ -1271,93 +1276,161 @@ async function spotifyIsPlaying(venueId) {
   }
 }
 
-// ── RETRY SONGS THAT DIDN'T REACH SPOTIFY ──
-// If the music was paused between the patron paying and the song being sent,
-// Spotify rejects it. Every 10 seconds, try again (oldest first) until it lands.
+// What's on the bar's Spotify right now, with every URI it could go by. Asking with the bar's own
+// market makes Spotify say which song was requested when it plays its local version of it under a
+// different ID (track relinking), so a request still matches when it plays.
+async function playingNow(token) {
+  const r = await fetch('https://api.spotify.com/v1/me/player?market=from_token', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (r.status !== 200) return null; // 204 = no active device
+  const data = await r.json();
+  const item = data && data.item;
+  if (!item || !item.uri) return null;
+  const uris = [item.uri];
+  if (item.linked_from && item.linked_from.uri) uris.push(item.linked_from.uri);
+  return { uris };
+}
+
+// The URIs waiting in the bar's Spotify queue (Spotify only shows roughly the next 20), or null
+async function spotifyQueueUris(token) {
+  const r = await fetch('https://api.spotify.com/v1/me/player/queue', { headers: { Authorization: `Bearer ${token}` } });
+  if (r.status !== 200) return null;
+  const data = await r.json();
+  return (data.queue || []).filter(t => t && t.uri).map(t => t.uri);
+}
+
+async function markPlayed(ids) {
+  if (!ids.length) return [];
+  const r = await pool.query(
+    "UPDATE songs SET status = 'played', played_at = NOW() WHERE id = ANY($1) AND status = 'queued' RETURNING name",
+    [ids]
+  );
+  return r.rows.map(s => s.name);
+}
+
+// ── SEND SONGS TO SPOTIFY, OLDEST FIRST ──
+// Every request is saved first, then all of the bar's unsent requests go to Spotify in the order
+// they were paid for. A new request can never jump ahead of an older one that Spotify rejected
+// (music paused), and one bar's sends never run twice at once, so nothing is sent twice.
 // Only looks at the last 3 hours so old test songs never get pushed by surprise.
+const sendLocks = new Map();
+async function sendPendingNow(venueId) {
+  const pending = await pool.query(
+    `SELECT id, uri, name FROM songs
+     WHERE venue_id = $1 AND status = 'queued' AND added_to_spotify IS NOT TRUE
+       AND added_at > NOW() - INTERVAL '3 hours'
+     ORDER BY added_at ASC, id ASC`,
+    [venueId]
+  );
+  for (const song of pending.rows) {
+    if (!(await addToSpotifyQueue(venueId, song.uri))) break; // keep order: stop at first failure
+    await pool.query('UPDATE songs SET added_to_spotify = TRUE, sent_at = clock_timestamp() WHERE id = $1', [song.id]);
+    console.log(`[spotify-send] Sent "${song.name}" to Spotify at ${venueId}`);
+  }
+}
+
+// Resolves to whether song `songId` (if given) is now on Spotify
+function sendPendingToSpotify(venueId, songId) {
+  const run = (sendLocks.get(venueId) || Promise.resolve())
+    .then(() => sendPendingNow(venueId))
+    .catch(e => console.error('[spotify-send] Error:', e.message));
+  sendLocks.set(venueId, run);
+  run.then(() => { if (sendLocks.get(venueId) === run) sendLocks.delete(venueId); });
+  return run.then(async () => {
+    if (!songId) return false;
+    const r = await pool.query('SELECT added_to_spotify FROM songs WHERE id = $1', [songId]);
+    return !!(r.rows[0] && r.rows[0].added_to_spotify);
+  });
+}
+
+// Every 10 seconds, retry requests Spotify rejected earlier
 async function retryPendingSpotify() {
   try {
-    const pending = await pool.query(
-      `SELECT id, venue_id, uri, name FROM songs
+    const venues = await pool.query(
+      `SELECT DISTINCT venue_id FROM songs
        WHERE status = 'queued' AND added_to_spotify IS NOT TRUE
-         AND added_at > NOW() - INTERVAL '3 hours'
-       ORDER BY added_at ASC`
+         AND added_at > NOW() - INTERVAL '3 hours'`
     );
-    const blockedVenues = new Set();
-    for (const song of pending.rows) {
-      if (blockedVenues.has(song.venue_id)) continue; // keep order: stop at first failure per bar
-      const ok = await addToSpotifyQueue(song.venue_id, song.uri);
-      if (ok) {
-        await pool.query('UPDATE songs SET added_to_spotify = TRUE WHERE id = $1', [song.id]);
-        console.log(`[spotify-retry] Sent "${song.name}" to Spotify at ${song.venue_id}`);
-      } else {
-        blockedVenues.add(song.venue_id);
-      }
-    }
+    for (const { venue_id } of venues.rows) await sendPendingToSpotify(venue_id);
   } catch (e) {
     console.error('[spotify-retry] Error:', e.message);
   }
 }
 
 // ── SERVER-SIDE AUTO-CLEAR ──
+// Every 10 seconds, mark requests played once Spotify plays them. Only songs already sent to
+// Spotify can play, and Spotify plays its queue in the order songs were sent.
 async function autoClearPlayed() {
   try {
     const venuesResult = await pool.query(
-      "SELECT DISTINCT venue_id FROM songs WHERE status = 'queued'"
+      "SELECT DISTINCT venue_id FROM songs WHERE status = 'queued' AND added_to_spotify"
     );
-    if (!venuesResult.rows.length) return;
 
     for (const { venue_id } of venuesResult.rows) {
       try {
         const token = await getVenueToken(venue_id);
         if (!token) continue;
 
-        const queued = await pool.query(
-          "SELECT uri, name FROM songs WHERE venue_id = $1 AND status = 'queued'",
+        const queued = (await pool.query(
+          `SELECT id, uri, name, sent_at FROM songs
+           WHERE venue_id = $1 AND status = 'queued' AND added_to_spotify
+           ORDER BY sent_at ASC NULLS FIRST, added_at ASC, id ASC`,
           [venue_id]
-        );
-        if (!queued.rows.length) continue;
+        )).rows;
+        if (!queued.length) continue;
+        const cleared = new Set();
 
-        const queuedUris = new Set(queued.rows.map(s => s.uri));
-
-        const nowRes = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (nowRes.status === 200) {
-          const nowData = await nowRes.json();
-          if (nowData && nowData.item && queuedUris.has(nowData.item.uri)) {
-            const cleared = await pool.query(
-              "UPDATE songs SET status = 'played', played_at = NOW() WHERE venue_id = $1 AND uri = $2 AND status = 'queued' RETURNING name",
-              [venue_id, nowData.item.uri]
-            );
-            if (cleared.rowCount > 0) {
-              console.log(`[auto-clear] Now playing: "${cleared.rows[0].name}" at ${venue_id}`);
+        const now = await playingNow(token);
+        // A song the bar removed is about to be skipped; don't count it as a play of another
+        // request for the same song
+        const skipping = now && (await pool.query(
+          'SELECT 1 FROM spotify_skips WHERE venue_id = $1 AND uri = ANY($2) LIMIT 1', [venue_id, now.uris]
+        )).rows.length;
+        if (now && !skipping) {
+          // The oldest request for the playing song is the copy that's playing
+          const hit = queued.find(s => now.uris.includes(s.uri));
+          if (hit) {
+            const ids = [hit.id];
+            // Requests sent before it have played or been skipped already, unless they're still
+            // waiting in Spotify's queue (the bartender reordered it)
+            const earlier = queued.slice(0, queued.indexOf(hit));
+            const waiting = earlier.length ? await spotifyQueueUris(token) : null;
+            if (waiting) {
+              const left = {};
+              waiting.forEach(u => { left[u] = (left[u] || 0) + 1; });
+              earlier.forEach(s => {
+                if (left[s.uri] > 0) left[s.uri]--;
+                else ids.push(s.id);
+              });
             }
+            ids.forEach(id => cleared.add(id));
+            const names = await markPlayed(ids);
+            if (names.length) console.log(`[auto-clear] Played: ${names.map(n => `"${n}"`).join(', ')} at ${venue_id}`);
           }
         }
 
-        const recentRes = await fetch('https://api.spotify.com/v1/me/player/recently-played?limit=5', {
+        // Backup for songs that played between checks. Only counts a play that started after the
+        // request was sent, so a song that was already playing when someone requested it again
+        // doesn't clear the new request.
+        const recentRes = await fetch('https://api.spotify.com/v1/me/player/recently-played?limit=10', {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (recentRes.status === 200) {
           const recentData = await recentRes.json();
-          if (recentData && recentData.items) {
-            for (const item of recentData.items) {
-              const uri = item.track.uri;
-              if (queuedUris.has(uri)) {
-                const cleared = await pool.query(
-                  "UPDATE songs SET status = 'played', played_at = NOW() WHERE venue_id = $1 AND uri = $2 AND status = 'queued' RETURNING name",
-                  [venue_id, uri]
-                );
-                if (cleared.rowCount > 0) {
-                  console.log(`[auto-clear] Recently played: "${cleared.rows[0].name}" at ${venue_id}`);
-                }
-              }
-            }
+          const ids = [];
+          for (const item of (recentData && recentData.items) || []) {
+            if (!item || !item.track || !item.track.uri || !item.played_at) continue;
+            const started = new Date(item.played_at).getTime() - (item.track.duration_ms || 0);
+            const match = queued.find(s => !cleared.has(s.id) && s.uri === item.track.uri &&
+              s.sent_at && started > new Date(s.sent_at).getTime() - 10000);
+            if (match) { cleared.add(match.id); ids.push(match.id); }
           }
+          const names = await markPlayed(ids);
+          if (names.length) console.log(`[auto-clear] Recently played: ${names.map(n => `"${n}"`).join(', ')} at ${venue_id}`);
         }
       } catch (e) {
-        // Silently continue
+        // try again on the next round
       }
     }
   } catch (e) {
@@ -1376,16 +1449,11 @@ async function skipRemovedSongs() {
       try {
         const token = await getVenueToken(venue_id);
         if (!token) continue;
-        const nowRes = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (nowRes.status !== 200) continue;
-        const now = await nowRes.json();
-        const uri = now && now.item && now.item.uri;
-        if (!uri) continue;
+        const now = await playingNow(token);
+        if (!now) continue;
         const skip = await pool.query(
-          'SELECT id, name FROM spotify_skips WHERE venue_id = $1 AND uri = $2 ORDER BY created_at LIMIT 1',
-          [venue_id, uri]
+          'SELECT id, name FROM spotify_skips WHERE venue_id = $1 AND uri = ANY($2) ORDER BY created_at LIMIT 1',
+          [venue_id, now.uris]
         );
         if (!skip.rows.length) continue;
         const r = await fetch('https://api.spotify.com/v1/me/player/next', {
@@ -1393,6 +1461,7 @@ async function skipRemovedSongs() {
         });
         if (r.ok) {
           await pool.query('DELETE FROM spotify_skips WHERE id = $1', [skip.rows[0].id]);
+          upcomingCache.delete(venue_id);
           console.log(`[skip-removed] Skipped removed song "${skip.rows[0].name}" at ${venue_id}`);
         }
       } catch (e) {
@@ -1838,12 +1907,12 @@ app.post('/api/queue/add', async (req, res) => {
       return res.json({ success: true, alreadyProcessed: true, position: await countQueued() });
     }
 
-    const addedToSpotify = await addToSpotifyQueue(venue_id, uri);
     const id = Date.now();
     await pool.query(`
       INSERT INTO songs (id, track_id, name, artist, image, uri, venue_id, added_to_spotify, amount_paid)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    `, [id, track_id, track_name, artist, image, uri, venue_id, addedToSpotify, stripeSession.amount_total || 99]);
+      VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8)
+    `, [id, track_id, track_name, artist, image, uri, venue_id, stripeSession.amount_total || 99]);
+    const addedToSpotify = await sendPendingToSpotify(venue_id, id);
     const position = await pool.query(
       "SELECT COUNT(*) FROM songs WHERE venue_id = $1 AND status = 'queued'",
       [venue_id]
@@ -1872,6 +1941,13 @@ async function getUpcoming(venueId, zorosRows) {
     if (r.status !== 200) return null;
     const data = await r.json();
     const spotifyQueue = (data.queue || []).filter(t => t && t.uri);
+
+    // Songs the bar removed are still in Spotify's queue until they're skipped; leave them out
+    const skips = await pool.query('SELECT uri FROM spotify_skips WHERE venue_id = $1', [venueId]);
+    skips.rows.forEach(({ uri }) => {
+      const i = spotifyQueue.findIndex(t => t.uri === uri);
+      if (i >= 0) spotifyQueue.splice(i, 1);
+    });
 
     // Zoros songs already handed to Spotify, matched by song (a song can be requested twice)
     const sent = zorosRows.filter(s => s.added_to_spotify);
@@ -1910,7 +1986,8 @@ app.get('/api/queue', async (req, res) => {
   const venueId = req.query.venueId || 'default';
   try {
     const queue = await pool.query(
-      "SELECT * FROM songs WHERE venue_id = $1 AND status = 'queued' ORDER BY added_at ASC",
+      // Play order: songs already on Spotify in the order they were sent, then ones still waiting
+      "SELECT * FROM songs WHERE venue_id = $1 AND status = 'queued' ORDER BY sent_at ASC NULLS LAST, added_at ASC, id ASC",
       [venueId]
     );
     const played = await pool.query(
@@ -1950,6 +2027,7 @@ app.post('/api/queue/skip/:id', requireVenueAuth, async (req, res) => {
     if (willSkip) {
       await pool.query('INSERT INTO spotify_skips (venue_id, uri, name) VALUES ($1, $2, $3)', [req.session.venueId, song.uri, song.name]);
     }
+    upcomingCache.delete(req.session.venueId);
     res.json({ success: true, willSkip });
   } catch (e) {
     res.status(500).json({ error: e.message });
