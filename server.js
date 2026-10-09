@@ -435,11 +435,40 @@ app.get('/api/venue/revenue', requireVenueAuth, async (req, res) => {
        FROM songs WHERE venue_id = $1`,
       [venueId]
     );
+    // What the bar actually earns, from the payments made at this bar: 75% after the Stripe fee,
+    // or exactly what Stripe sent the bar when it split the payment automatically. Same formula
+    // as the team dashboard's "Owed", so the two always agree. While Stripe is in test mode,
+    // test payments count so the dashboard can be tried out; once live, only real ones do.
+    const liveOnly = String(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_live');
+    const feeExpr = `COALESCE(p.stripe_fee, ROUND(p.amount * 0.015) + 25)`;
+    const barExpr = `COALESCE(p.bar_amount, ROUND((p.amount - ${feeExpr}) * ${BAR_SHARE}))`;
+    const earn = await pool.query(
+      `SELECT k.period,
+              COUNT(p.session_id)::int AS payments,
+              COALESCE(SUM(p.amount), 0)::int AS gross,
+              COALESCE(SUM(${feeExpr}), 0)::int AS fees,
+              COALESCE(SUM(${barExpr}), 0)::int AS earnings
+       FROM (VALUES ('today', 1), ('week', 7), ('month', 30), ('allTime', NULL)) AS k(period, days)
+       LEFT JOIN processed_payments p
+         ON p.venue_id = $1 AND p.amount IS NOT NULL
+        AND ($2::boolean = false OR p.livemode = true)
+        AND (k.days IS NULL OR p.created_at >= NOW() - (k.days * INTERVAL '1 day'))
+       GROUP BY k.period`,
+      [venueId, liveOnly]
+    );
+    const money = {};
+    earn.rows.forEach(r => {
+      money[r.period] = { earnings: r.earnings, gross: r.gross, fees: r.fees, zoros: r.gross - r.fees - r.earnings, payments: r.payments };
+    });
+    const period = (rows, key) => ({
+      total: parseInt(rows[0].total), count: parseInt(rows[0].count), ...money[key]
+    });
     res.json({
-      today: { total: parseInt(today.rows[0].total), count: parseInt(today.rows[0].count) },
-      week: { total: parseInt(week.rows[0].total), count: parseInt(week.rows[0].count) },
-      month: { total: parseInt(month.rows[0].total), count: parseInt(month.rows[0].count) },
-      allTime: { total: parseInt(allTime.rows[0].total), count: parseInt(allTime.rows[0].count) }
+      barSharePct: BAR_SHARE * 100,
+      today: period(today.rows, 'today'),
+      week: period(week.rows, 'week'),
+      month: period(month.rows, 'month'),
+      allTime: period(allTime.rows, 'allTime')
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
