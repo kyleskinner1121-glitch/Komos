@@ -1563,11 +1563,24 @@ app.get('/api/debug', async (req, res) => {
 // in the song title or artist names ("the", "feat" etc. ignored, accents and punctuation ignored).
 const SEARCH_FILLER = new Set(['the', 'a', 'an', 'feat', 'ft', 'and', 'el', 'la', 'los', 'las', 'de', 'del', 'le', 'les', 'het', 'een', 'und', 'der', 'die', 'das']);
 const normSearch = str => String(str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
-function matchesSearch(track, q) {
+function matchesSearch(text, q) {
   const words = normSearch(q).split(' ').filter(w => w && !SEARCH_FILLER.has(w));
   if (!words.length) return true;
-  const text = ` ${normSearch(track.name + ' ' + track.artist)} `;
-  return words.every(w => text.includes(w));
+  const hay = ` ${normSearch(text)} `;
+  return words.every(w => hay.includes(` ${w}`));
+}
+
+// Which hidden songs should the guest be told about?
+// - Searched an artist the bar blocks (Drake): the hidden songs by that artist.
+// - Searched a song title, and none of the shown songs are by an artist matching the search: hidden title matches.
+// - Searched an allowed artist (Oasis): nothing, even if an unrelated song called "Oasis" was hidden.
+function hiddenWorthMentioning(removed, shown, q) {
+  if (!shown.length) return removed; // everything hidden: always explain
+  const byArtist = t => matchesSearch(t.artistName || t.artist, q);
+  const artistHits = removed.filter(byArtist);
+  if (artistHits.length) return artistHits;
+  if (shown.some(byArtist)) return [];
+  return removed.filter(t => matchesSearch(t.name, q));
 }
 
 app.get('/api/search', async (req, res) => {
@@ -1614,7 +1627,7 @@ app.get('/api/search', async (req, res) => {
       // can pull in a house remix by someone else; hiding that shouldn't show the bar's-settings message.
       let removed = tracks.filter((t, i) => !allowed[i]);
       tracks = tracks.filter((t, i) => allowed[i]);
-      if (tracks.length) removed = removed.filter(t => matchesSearch(t, q));
+      removed = hiddenWorthMentioning(removed, tracks, q);
       hidden = removed.length;
       // How many were hidden for explicit lyrics (the rest were the genre filter), so guests get the right reason
       hiddenExplicit = removed.filter(t => settings.blockExplicit && t.explicit).length;
