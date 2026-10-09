@@ -492,7 +492,7 @@ const T = {
     payInstead: 'PAY €0.99 INSTEAD',
     buyBundle: '🎵 Buy a bundle and save',
     confirmBuy: (price) => `BUY FOR ${price}`,
-    confirmLoginNote: 'Sign up for free to save your credits.',
+    confirmLoginNote: "After paying, you'll create a free account so your credits are saved.",
     creditsRemaining: (n) => `You have ${n} credit${n !== 1 ? 's' : ''} remaining`,
     creditsBadge: (n) => `${n} credit${n !== 1 ? 's' : ''}`,
     addedToast: (n) => `♫ Added — ${n} credit${n !== 1 ? 's' : ''} left`,
@@ -547,7 +547,7 @@ const T = {
     payInstead: 'PAGAR €0.99 EN SU LUGAR',
     buyBundle: '🎵 Comprar un pack y ahorrar',
     confirmBuy: (price) => `COMPRAR POR ${price}`,
-    confirmLoginNote: 'Regístrate gratis para guardar tus créditos.',
+    confirmLoginNote: 'Después de pagar, crearás una cuenta gratis para guardar tus créditos.',
     creditsRemaining: (n) => `Tienes ${n} crédito${n !== 1 ? 's' : ''} restante${n !== 1 ? 's' : ''}`,
     creditsBadge: (n) => `${n} crédito${n !== 1 ? 's' : ''}`,
     addedToast: (n) => `♫ Añadida — ${n} crédito${n !== 1 ? 's' : ''} restante${n !== 1 ? 's' : ''}`,
@@ -602,7 +602,7 @@ const T = {
     payInstead: 'BETAAL LIEVER €0,99',
     buyBundle: '🎵 Koop een bundel en bespaar',
     confirmBuy: (price) => `KOOP VOOR ${price}`,
-    confirmLoginNote: 'Meld je gratis aan om je tegoeden te bewaren.',
+    confirmLoginNote: 'Na het betalen maak je een gratis account aan zodat je tegoeden bewaard blijven.',
     creditsRemaining: (n) => `Je hebt nog ${n} tegoed${n !== 1 ? 'en' : ''}`,
     creditsBadge: (n) => `${n} tegoed${n !== 1 ? 'en' : ''}`,
     addedToast: (n) => `♫ Toegevoegd — nog ${n} tegoed${n !== 1 ? 'en' : ''}`,
@@ -657,7 +657,7 @@ const T = {
     payInstead: 'PAYER 0,99 € À LA PLACE',
     buyBundle: '🎵 Acheter un pack et économiser',
     confirmBuy: (price) => `ACHETER POUR ${price}`,
-    confirmLoginNote: 'Inscris-toi gratuitement pour garder tes crédits.',
+    confirmLoginNote: "Après le paiement, tu créeras un compte gratuit pour garder tes crédits.",
     creditsRemaining: (n) => `Il te reste ${n} crédit${n !== 1 ? 's' : ''}`,
     creditsBadge: (n) => `${n} crédit${n !== 1 ? 's' : ''}`,
     addedToast: (n) => `♫ Ajouté — ${n} crédit${n !== 1 ? 's' : ''} restant${n !== 1 ? 's' : ''}`,
@@ -847,9 +847,27 @@ async function init() {
     if (data.loggedIn) {
       currentUser = data.user;
       updateCreditsDisplay();
+      claimPendingBundle();
     }
   } catch(e) {}
   loadQueue();
+}
+
+// A bundle paid for before having an account, whose success page was closed before signing up:
+// attach it now that they're logged in.
+async function claimPendingBundle() {
+  let sid = null;
+  try { sid = localStorage.getItem('zoros_pending_bundle'); } catch (e) {}
+  if (!sid) return;
+  try {
+    const r = await fetch('/api/bundle/confirm', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sid })
+    });
+    const data = await r.json();
+    if (data.success || r.status === 400 || r.status === 403) { try { localStorage.removeItem('zoros_pending_bundle'); } catch (e) {} }
+    if (data.success && typeof data.credits === 'number') { currentUser.credits = data.credits; updateCreditsDisplay(); }
+  } catch (e) {}
 }
 
 function updateCreditsDisplay() {
@@ -916,11 +934,7 @@ function closeBundleConfirm() {
 async function confirmBuyBundle() {
   if (!pendingBundleType) return;
 
-  if (!currentUser) {
-    window.location.href = `/login?venue=${VENUE_ID}&next=bundles&bundle=${pendingBundleType}`;
-    return;
-  }
-
+  // No account needed to pay: guests create one on the success page to keep the credits
   const btn = document.getElementById('btnConfirmBuy');
   btn.textContent = t('redirecting');
   btn.style.pointerEvents = 'none';

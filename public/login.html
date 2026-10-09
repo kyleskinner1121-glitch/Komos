@@ -89,7 +89,7 @@
   <a href="#" id="backLink">← Back to jukebox</a>
 </div>
 
-<div class="guest-link">
+<div class="guest-link" id="guestLink">
   <button onclick="continueAsGuest()">Continue as guest instead</button>
 </div>
 
@@ -97,6 +97,8 @@
 const params = new URLSearchParams(window.location.search);
 const venueId = params.get('venue') || 'default';
 const next = params.get('next');
+// Buying a bundle needs an account to hold the credits, so no guest option there
+if (next === 'bundles') document.getElementById('guestLink').style.display = 'none';
 
 document.getElementById('backLink').href = venueId !== 'default' ? `/?venue=${venueId}` : '/';
 
