@@ -1266,9 +1266,7 @@
   }
 
   async function removeSong(id) {
-    const msg = currentLang === 'es'
-      ? '¿Quitar esta canción? Si ya está en la cola de Spotify, Zoros la saltará en cuanto empiece (puede sonar unos segundos).'
-      : 'Remove this song? If it is already in Spotify\'s queue, Zoros skips it as soon as it starts (it may play for a few seconds).';
+    const msg = currentLang === 'es' ? '¿Quitar esta canción?' : 'Remove this song?';
     if (!confirm(msg)) return;
     await fetch(`/api/queue/skip/${id}`, { method: 'POST' });
     loadQueue();
