@@ -196,7 +196,7 @@
         <h2>Bars</h2>
         <button class="btn small" onclick="openAddBar()">Add bar</button>
       </div>
-      <div class="hint">For the selected period. "Buy rate" is purchases ÷ unique visitors. "Owed" counts live payments only, minus payouts you've recorded.</div>
+      <div class="hint">For the selected period. "Buy rate" is purchases ÷ unique visitors. The bar's share is after Stripe fees. "Owed" is what you still pay by hand: live payments only, minus payouts you've recorded. Payments Stripe split automatically are already paid and aren't in it.</div>
       <div class="tbl-wrap"><table id="barsTbl"></table></div>
     </div>
 
@@ -362,6 +362,7 @@ async function load() {
     document.getElementById('login').classList.add('hidden');
     document.getElementById('app').classList.remove('hidden');
     render();
+    loadStripeStatus();
     clearInterval(timer);
     timer = setInterval(load, 60000);
     return true;
@@ -402,7 +403,7 @@ function render() {
 
   document.getElementById('flow').innerHTML = `
     <span>Revenue <b class="num">${eur(t.revenue)}</b></span><span class="arrow">−</span>
-    <span>Bars ${d.barSharePct}% <b class="num">${eur(t.barShare)}</b></span><span class="arrow">−</span>
+    <span>Bars ${d.barSharePct}% after fees <b class="num">${eur(t.barShare)}</b></span><span class="arrow">−</span>
     <span>Stripe fees <b class="num">${eur(t.fees)}</b>${t.feesEstimated ? ` <span style="color:var(--dim)">(${int(t.feesEstimated)} estimated)</span>` : ''}</span><span class="arrow">=</span>
     <span>Zoros <b class="num ${t.zorosNet < 0 ? 'neg' : ''}">${eur(t.zorosNet)}</b></span>`;
 
@@ -496,11 +497,11 @@ function renderBars(bars) {
   }
   el.innerHTML = `<thead><tr>
       <th>Bar</th><th>Status</th><th class="r">Visitors</th><th class="r">Songs</th><th class="r">Payments</th>
-      <th class="r">Buy rate</th><th class="r">Revenue</th><th class="r">Bar's ${data.barSharePct}%</th><th>Last song</th><th class="r">Owed</th><th></th>
+      <th class="r">Buy rate</th><th class="r">Revenue</th><th class="r">Bar's ${data.barSharePct}% after fees</th><th>Last song</th><th class="r">Owed</th><th></th>
     </tr></thead><tbody>` + bars.map(b => `
     <tr>
       <td><div class="bar-name">${esc(b.name || b.venue_id.replace(/-/g, ' '))}</div><div class="bar-id">${esc(b.venue_id)}${b.name ? '' : ' · no account'}</div></td>
-      <td>${b.removed ? '<span class="pill"><span class="dot"></span>Removed</span>' : `${b.is_active === null ? '' : `<span class="pill ${b.is_active ? 'ok' : 'bad'}"><span class="dot"></span>${b.is_active ? 'On' : 'Off'}</span>`}<span class="pill ${b.spotify_connected ? 'ok' : 'bad'}"><span class="dot"></span>Spotify</span>`}</td>
+      <td>${b.removed ? '<span class="pill"><span class="dot"></span>Removed</span>' : `${b.is_active === null ? '' : `<span class="pill ${b.is_active ? 'ok' : 'bad'}"><span class="dot"></span>${b.is_active ? 'On' : 'Off'}</span>`}<span class="pill ${b.spotify_connected ? 'ok' : 'bad'}"><span class="dot"></span>Spotify</span>${stripePill(b)}`}</td>
       <td class="r num">${int(b.visitors)}</td>
       <td class="r num">${int(b.songs)}</td>
       <td class="r num">${int(b.payments)}</td>
@@ -509,7 +510,7 @@ function renderBars(bars) {
       <td class="r num">${eur(b.bar_share)}</td>
       <td>${ago(b.last_song)}</td>
       <td class="r num ${b.owed ? 'owed' : ''}">${eur(b.owed)}</td>
-      <td class="row-actions">${b.owed ? `<button class="btn ghost small" onclick="openPay('${esc(b.venue_id)}')">Mark paid</button> ` : ''}${b.name && !b.removed ? `<button class="btn ghost small" onclick="resetPassword('${esc(b.venue_id)}')">Reset password</button> ` : ''}${b.removed ? `<button class="btn ghost small" onclick="restoreBar('${esc(b.venue_id)}')">Restore</button>` : `<button class="btn ghost small danger" onclick="removeBar('${esc(b.venue_id)}')">Remove</button>`}</td>
+      <td class="row-actions">${b.owed ? `<button class="btn ghost small" onclick="openPay('${esc(b.venue_id)}')">Mark paid</button> ` : ''}${b.name && !b.removed ? `<button class="btn ghost small" onclick="linkStripe('${esc(b.venue_id)}')">Stripe</button> <button class="btn ghost small" onclick="resetPassword('${esc(b.venue_id)}')">Reset password</button> ` : ''}${b.removed ? `<button class="btn ghost small" onclick="restoreBar('${esc(b.venue_id)}')">Restore</button>` : `<button class="btn ghost small danger" onclick="removeBar('${esc(b.venue_id)}')">Remove</button>`}</td>
     </tr>`).join('') + '</tbody>';
 }
 
@@ -622,6 +623,37 @@ async function resetPassword(venueId) {
   try {
     const d = await adminPost('/api/admin/reset-password', { venueId });
     showCreds(`New password for ${d.venue.name}`, 'Send this to the bar. Their old password no longer works.', d);
+  } catch (err) {
+    alert(err.message);
+  }
+}
+// ── STRIPE AUTO-PAY ──
+let stripeStatus = {};
+async function loadStripeStatus() {
+  try {
+    const r = await fetch('/api/admin/stripe-status', { headers: { 'x-admin-key': KEY } });
+    const d = await r.json();
+    if (d.success) { stripeStatus = d.bars; if (data) renderBars(data.bars); }
+  } catch (e) {}
+}
+function stripePill(b) {
+  if (!b.stripe_account_id) return '';
+  const s = stripeStatus[b.venue_id];
+  if (!s) return '<span class="pill"><span class="dot"></span>Auto-pay</span>';
+  return `<span class="pill ${s.ready ? 'ok' : 'bad'}" title="${esc(s.status)}"><span class="dot"></span>Auto-pay</span>`;
+}
+async function linkStripe(venueId) {
+  const b = data.bars.find(x => x.venue_id === venueId);
+  const name = barName(venueId);
+  const current = (b && b.stripe_account_id) || '';
+  const acct = prompt(`Stripe connected account ID for ${name} (starts with acct_).\n\nOnce Stripe shows it as enabled, every payment at ${name} is split automatically: 75% after Stripe fees to the bar, the rest to Zoros. Leave empty to turn automatic payouts off.`, current);
+  if (acct === null) return;
+  try {
+    const d = await adminPost('/api/admin/stripe-account', { venueId, accountId: acct.trim() });
+    if (!d.linked) alert(`Automatic payouts are off for ${name}. Pay them by hand from "Owed".`);
+    else if (d.ready) alert(`${name} is linked and enabled. From now on its payments are split automatically.`);
+    else alert(`${name} is linked, but not active yet: ${d.status}.\n\nPayments keep going to Zoros (pay by hand from "Owed") until Stripe enables the account, then switch over on their own.`);
+    await load(); loadStripeStatus();
   } catch (err) {
     alert(err.message);
   }
