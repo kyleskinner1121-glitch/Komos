@@ -1559,6 +1559,17 @@ app.get('/api/debug', async (req, res) => {
   }
 });
 
+// Does this song look like what the guest typed? Every meaningful search word must appear
+// in the song title or artist names ("the", "feat" etc. ignored, accents and punctuation ignored).
+const SEARCH_FILLER = new Set(['the', 'a', 'an', 'feat', 'ft', 'and', 'el', 'la', 'los', 'las', 'de', 'del', 'le', 'les', 'het', 'een', 'und', 'der', 'die', 'das']);
+const normSearch = str => String(str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+function matchesSearch(track, q) {
+  const words = normSearch(q).split(' ').filter(w => w && !SEARCH_FILLER.has(w));
+  if (!words.length) return true;
+  const text = ` ${normSearch(track.name + ' ' + track.artist)} `;
+  return words.every(w => text.includes(w));
+}
+
 app.get('/api/search', async (req, res) => {
   try {
     const { q, venueId } = req.query;
@@ -1599,10 +1610,14 @@ app.get('/api/search', async (req, res) => {
     let hidden = 0, hiddenExplicit = 0;
     if (filtering) {
       const allowed = await Promise.all(tracks.map(t => trackAllowed(t, settings)));
-      hidden = allowed.filter(a => !a).length;
-      // How many were hidden for explicit lyrics (the rest were the genre filter), so guests get the right reason
-      hiddenExplicit = tracks.filter((t, i) => !allowed[i] && settings.blockExplicit && t.explicit).length;
+      // Only tell guests about hidden songs that are what they searched for. Searching "the beatles"
+      // can pull in a house remix by someone else; hiding that shouldn't show the bar's-settings message.
+      let removed = tracks.filter((t, i) => !allowed[i]);
       tracks = tracks.filter((t, i) => allowed[i]);
+      if (tracks.length) removed = removed.filter(t => matchesSearch(t, q));
+      hidden = removed.length;
+      // How many were hidden for explicit lyrics (the rest were the genre filter), so guests get the right reason
+      hiddenExplicit = removed.filter(t => settings.blockExplicit && t.explicit).length;
     }
     res.json({ tracks: tracks.slice(0, 10), hidden, hiddenExplicit, hiddenGenre: hidden - hiddenExplicit });
   } catch (e) {
