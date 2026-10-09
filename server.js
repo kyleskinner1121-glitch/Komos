@@ -1289,15 +1289,28 @@ async function playingNow(token) {
   if (!item || !item.uri) return null;
   const uris = [item.uri];
   if (item.linked_from && item.linked_from.uri) uris.push(item.linked_from.uri);
-  return { uris };
+  return { uris, name: item.name, artists: item.artists };
 }
 
-// The URIs waiting in the bar's Spotify queue (Spotify only shows roughly the next 20), or null
-async function spotifyQueueUris(token) {
+// The songs waiting in the bar's Spotify queue (Spotify only shows roughly the next 20), or null
+async function spotifyQueueTracks(token) {
   const r = await fetch('https://api.spotify.com/v1/me/player/queue', { headers: { Authorization: `Bearer ${token}` } });
   if (r.status !== 200) return null;
   const data = await r.json();
-  return (data.queue || []).filter(t => t && t.uri).map(t => t.uri);
+  return (data.queue || []).filter(t => t && t.uri).map(t => ({ uris: [t.uri], name: t.name, artists: t.artists }));
+}
+
+// Spotify sometimes plays a request as a different copy of the same song (another album or its
+// local version) under an ID we can't link back, so a request also matches on title + main artist.
+const plainTitle = s => String(s || '').toLowerCase()
+  .replace(/\s*[([].*?[)\]]/g, '').replace(/\s+-\s+.*$/, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const plainArtist = s => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+function isRequest(row, track) {
+  if (!track) return false;
+  if (track.uris.includes(row.uri)) return true;
+  const title = plainTitle(track.name), artist = track.artists && track.artists[0] && plainArtist(track.artists[0].name);
+  return !!title && !!artist && plainTitle(row.name) === title &&
+    String(row.artist || '').split(',').some(a => plainArtist(a) === artist);
 }
 
 async function markPlayed(ids) {
@@ -1361,7 +1374,9 @@ async function retryPendingSpotify() {
 // ── SERVER-SIDE AUTO-CLEAR ──
 // Every 10 seconds, mark requests played once Spotify plays them. Only songs already sent to
 // Spotify can play, and Spotify plays its queue in the order songs were sent.
+const missingRounds = new Map(); // request id -> checks in a row it was gone from Spotify after being seen there
 async function autoClearPlayed() {
+  if (missingRounds.size > 5000) missingRounds.clear(); // removed requests leave entries behind
   try {
     const venuesResult = await pool.query(
       "SELECT DISTINCT venue_id FROM songs WHERE status = 'queued' AND added_to_spotify"
@@ -1373,41 +1388,57 @@ async function autoClearPlayed() {
         if (!token) continue;
 
         const queued = (await pool.query(
-          `SELECT id, uri, name, sent_at FROM songs
+          `SELECT id, uri, name, artist, sent_at FROM songs
            WHERE venue_id = $1 AND status = 'queued' AND added_to_spotify
            ORDER BY sent_at ASC NULLS FIRST, added_at ASC, id ASC`,
           [venue_id]
         )).rows;
         if (!queued.length) continue;
         const cleared = new Set();
+        const clear = async (ids, why) => {
+          ids = ids.filter(id => !cleared.has(id));
+          ids.forEach(id => { cleared.add(id); missingRounds.delete(id); });
+          const names = await markPlayed(ids);
+          if (names.length) console.log(`[auto-clear] ${why}: ${names.map(n => `"${n}"`).join(', ')} at ${venue_id}`);
+        };
 
         const now = await playingNow(token);
+        // No active device: Spotify can't say what's queued, so only the history check below runs
+        const waiting = now ? await spotifyQueueTracks(token) : null;
+
+        // Which requests Spotify still shows: matched in order, one request per queued copy
+        const inSpotify = new Set();
+        (waiting || []).forEach(t => {
+          const row = queued.find(s => !inSpotify.has(s.id) && isRequest(s, t));
+          if (row) inSpotify.add(row.id);
+        });
+
         // A song the bar removed is about to be skipped; don't count it as a play of another
         // request for the same song
         const skipping = now && (await pool.query(
           'SELECT 1 FROM spotify_skips WHERE venue_id = $1 AND uri = ANY($2) LIMIT 1', [venue_id, now.uris]
         )).rows.length;
-        if (now && !skipping) {
-          // The oldest request for the playing song is the copy that's playing
-          const hit = queued.find(s => now.uris.includes(s.uri));
-          if (hit) {
-            const ids = [hit.id];
-            // Requests sent before it have played or been skipped already, unless they're still
-            // waiting in Spotify's queue (the bartender reordered it)
-            const earlier = queued.slice(0, queued.indexOf(hit));
-            const waiting = earlier.length ? await spotifyQueueUris(token) : null;
-            if (waiting) {
-              const left = {};
-              waiting.forEach(u => { left[u] = (left[u] || 0) + 1; });
-              earlier.forEach(s => {
-                if (left[s.uri] > 0) left[s.uri]--;
-                else ids.push(s.id);
-              });
-            }
-            ids.forEach(id => cleared.add(id));
-            const names = await markPlayed(ids);
-            if (names.length) console.log(`[auto-clear] Played: ${names.map(n => `"${n}"`).join(', ')} at ${venue_id}`);
+        // The oldest request for the playing song that isn't also still waiting is the copy playing
+        const hit = now && !skipping ? queued.find(s => !inSpotify.has(s.id) && isRequest(s, now)) : null;
+        if (hit) {
+          // Requests sent before it have played or been skipped already, unless they're still
+          // waiting in Spotify's queue (the bartender reordered it)
+          const earlier = waiting ? queued.slice(0, queued.indexOf(hit)).filter(s => !inSpotify.has(s.id)) : [];
+          await clear([hit.id, ...earlier.map(s => s.id)], 'Played');
+        }
+
+        // A request Spotify showed earlier that has now left both its queue and the player, two
+        // checks in a row, has played (e.g. the bartender skipped it between checks)
+        if (waiting) {
+          const gone = [];
+          for (const s of queued) {
+            if (cleared.has(s.id)) continue;
+            if (inSpotify.has(s.id) || isRequest(s, now)) { missingRounds.set(s.id, 0); continue; }
+            if (!missingRounds.has(s.id)) continue; // never seen in Spotify: can't tell
+            const n = missingRounds.get(s.id) + 1;
+            if (n >= 2) gone.push(s.id); else missingRounds.set(s.id, n);
           }
+          await clear(gone, 'Left Spotify');
         }
 
         // Backup for songs that played between checks. Only counts a play that started after the
@@ -1421,16 +1452,16 @@ async function autoClearPlayed() {
           const ids = [];
           for (const item of (recentData && recentData.items) || []) {
             if (!item || !item.track || !item.track.uri || !item.played_at) continue;
+            const track = { uris: [item.track.uri], name: item.track.name, artists: item.track.artists };
             const started = new Date(item.played_at).getTime() - (item.track.duration_ms || 0);
-            const match = queued.find(s => !cleared.has(s.id) && s.uri === item.track.uri &&
-              s.sent_at && started > new Date(s.sent_at).getTime() - 10000);
-            if (match) { cleared.add(match.id); ids.push(match.id); }
+            const match = queued.find(s => !cleared.has(s.id) && !ids.includes(s.id) && !inSpotify.has(s.id) &&
+              isRequest(s, track) && s.sent_at && started > new Date(s.sent_at).getTime() - 10000);
+            if (match) ids.push(match.id);
           }
-          const names = await markPlayed(ids);
-          if (names.length) console.log(`[auto-clear] Recently played: ${names.map(n => `"${n}"`).join(', ')} at ${venue_id}`);
+          await clear(ids, 'Recently played');
         }
       } catch (e) {
-        // try again on the next round
+        console.error(`[auto-clear] ${venue_id}:`, e.message);
       }
     }
   } catch (e) {
