@@ -937,8 +937,10 @@ app.get('/api/admin/run-outreach', async (req, res) => {
 });
 
 // ── BUNDLE PAYMENT ──
+// Guests can buy a bundle without an account: they pay first, then create an account (or log in)
+// on the success page, which attaches the credits to it. Payments made while logged in stay tied
+// to that account.
 app.post('/api/create-bundle-payment', async (req, res) => {
-  if (!req.session.userId) return res.status(401).json({ error: 'Must be logged in to buy bundles' });
   const bundles = {
     single: { credits: 1, price: 99, label: '1 Song' },
     four: { credits: 4, price: 349, label: '4 Songs' },
@@ -963,7 +965,7 @@ app.post('/api/create-bundle-payment', async (req, res) => {
         quantity: 1
       }],
       mode: 'payment',
-      metadata: { bundleType, userId: String(req.session.userId), venueId: String(venueId), src: cleanSrc(src) || '' },
+      metadata: { bundleType, userId: req.session.userId ? String(req.session.userId) : '', venueId: String(venueId), src: cleanSrc(src) || '' },
       success_url: `${process.env.BASE_URL}/bundle-success?session_id={CHECKOUT_SESSION_ID}&bundle=${bundleType}&venue_id=${venueId}`,
       cancel_url: `${process.env.BASE_URL}?venue=${venueId}`
     }, venueId, bundle.price);
@@ -974,6 +976,28 @@ app.post('/api/create-bundle-payment', async (req, res) => {
 });
 
 // ── BUNDLE SUCCESS ──
+// What a paid bundle checkout is, before it's attached to an account: lets the success page
+// show "create an account to keep your 4 credits" with the email used at checkout filled in.
+app.get('/api/bundle/pending', async (req, res) => {
+  const bundles = { single: 1, four: 4, seven: 7, five: 5, ten: 10 };
+  const sessionId = String(req.query.session_id || '');
+  if (!sessionId) return res.status(400).json({ error: 'Missing session' });
+  try {
+    const s = await stripe.checkout.sessions.retrieve(sessionId);
+    const meta = s.metadata || {};
+    const claimed = await pool.query('SELECT 1 FROM processed_payments WHERE session_id = $1', [sessionId]);
+    res.json({
+      paid: s.payment_status === 'paid',
+      credits: bundles[meta.bundleType] || 0,
+      email: (s.customer_details && s.customer_details.email) || '',
+      claimed: claimed.rows.length > 0,
+      forAccount: !!meta.userId
+    });
+  } catch (e) {
+    res.status(400).json({ error: 'Payment not found' });
+  }
+});
+
 app.post('/api/bundle/confirm', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
   const bundles = { single: 1, four: 4, seven: 7, five: 5, ten: 10 }; // five/ten kept for older checkouts

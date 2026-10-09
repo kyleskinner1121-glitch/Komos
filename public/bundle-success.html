@@ -3,16 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Zoros — Credits Added!</title>
+<title>Zoros — Credits</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
-  :root { --black: #120E2E; --dark: #1A1245; --card: #231960; --border: #3D3284; --orange: #FF5500; --orange-light: #FF7733; --white: #FFFFFF; --muted: #9B93CC; --green: #27ae60; }
+  :root { --black: #120E2E; --dark: #1A1245; --card: #231960; --border: #3D3284; --orange: #FF5500; --orange-light: #FF7733; --white: #FFFFFF; --muted: #9B93CC; --green: #27ae60; --red: #e74c3c; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--black); color: var(--white); font-family: 'DM Sans', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center; }
   .check { width: 88px; height: 88px; background: rgba(255,85,0,0.15); border: 2px solid var(--orange); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 36px; margin: 0 auto 24px; animation: pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
   @keyframes pop { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   h1 { font-family: 'Bebas Neue', sans-serif; font-size: 48px; letter-spacing: 3px; color: var(--orange); margin-bottom: 8px; }
-  .subtitle { color: var(--muted); font-size: 14px; font-weight: 300; line-height: 1.6; margin-bottom: 32px; }
+  .subtitle { color: var(--muted); font-size: 14px; font-weight: 300; line-height: 1.6; margin-bottom: 32px; max-width: 360px; }
   .credits-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 24px; width: 100%; max-width: 360px; margin-bottom: 32px; }
   .credits-label { font-size: 11px; letter-spacing: 3px; color: var(--muted); text-transform: uppercase; margin-bottom: 8px; }
   .credits-number { font-family: 'Bebas Neue', sans-serif; font-size: 72px; color: var(--orange); letter-spacing: 2px; line-height: 1; }
@@ -23,85 +23,274 @@
   .how-to-step:last-child { margin-bottom: 0; }
   .step-num { background: var(--orange); color: white; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 500; flex-shrink: 0; margin-top: 1px; }
   .btn-primary { background: var(--orange); color: white; border: none; border-radius: 12px; font-family: 'Bebas Neue', sans-serif; font-size: 20px; letter-spacing: 2px; padding: 16px 40px; cursor: pointer; text-decoration: none; display: inline-block; }
+  .btn-primary:disabled { opacity: 0.6; cursor: default; }
   .loading { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
   .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--orange); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 12px; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .hidden { display: none !important; }
+
+  /* Create-account step for guests who paid without an account */
+  .claim { width: 100%; max-width: 360px; }
+  .claim .paid-pill { display: inline-block; background: rgba(39,174,96,0.15); color: var(--green); border: 1px solid rgba(39,174,96,0.4); border-radius: 999px; font-size: 12px; padding: 5px 12px; margin-bottom: 18px; }
+  .claim form { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 22px; text-align: left; }
+  .claim label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 6px; }
+  .claim input { width: 100%; background: var(--dark); border: 1px solid var(--border); border-radius: 10px; color: var(--white); font-family: inherit; font-size: 15px; padding: 12px 14px; margin-bottom: 14px; outline: none; }
+  .claim input:focus { border-color: var(--orange); }
+  .claim .btn-primary { width: 100%; padding: 14px; margin-top: 4px; }
+  .claim .err { color: var(--red); font-size: 13px; margin-bottom: 12px; display: none; }
+  .claim .err.show { display: block; }
+  .claim .switch { margin-top: 16px; font-size: 13px; color: var(--muted); }
+  .claim .switch button { background: none; border: none; color: var(--orange); font-family: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; padding: 0; }
+  .claim .safe { margin-top: 14px; font-size: 12px; color: var(--muted); line-height: 1.5; }
 </style>
 </head>
 <body>
 
-<div class="check">♫</div>
-<h1>Credits Added!</h1>
-<div class="subtitle">Your song credits are ready to use.<br>Search any song and queue it instantly.</div>
-
-<div class="credits-card">
-  <div class="credits-label">Your credits</div>
-  <div id="loadingSpinner">
-    <div class="spinner"></div>
-    <div class="loading">Loading your credits...</div>
-  </div>
-  <div id="creditsDisplay" style="display:none">
-    <div class="credits-number" id="creditsNum">0</div>
-    <div class="credits-sub">songs remaining</div>
-  </div>
+<!-- Guest who just paid: create an account (or log in) to receive the credits -->
+<div class="claim hidden" id="claimStep">
+  <div class="check">♫</div>
+  <div class="paid-pill" id="t-paid">Payment received</div>
+  <h1 id="t-claimTitle">Save your credits</h1>
+  <div class="subtitle" id="t-claimSub"></div>
+  <form id="claimForm" novalidate>
+    <div class="err" id="claimErr"></div>
+    <label for="email" id="t-email">Email</label>
+    <input id="email" type="email" autocomplete="email" required>
+    <label for="password" id="t-password">Password</label>
+    <input id="password" type="password" autocomplete="new-password" minlength="6" required>
+    <button class="btn-primary" type="submit" id="claimBtn"></button>
+  </form>
+  <div class="switch"><span id="t-switchText"></span> <button type="button" id="switchBtn"></button></div>
+  <div class="safe" id="t-safe"></div>
 </div>
 
-<div class="how-to">
-  <div class="how-to-title">How to use your credits</div>
-  <div class="how-to-step">
-    <div class="step-num">1</div>
-    <span>Search for any song in the jukebox</span>
-  </div>
-  <div class="how-to-step">
-    <div class="step-num">2</div>
-    <span>Tap the song and choose "Use 1 Credit"</span>
-  </div>
-  <div class="how-to-step">
-    <div class="step-num">3</div>
-    <span>Your song is instantly added to the bar's queue</span>
-  </div>
-</div>
+<!-- Credits added -->
+<div id="doneStep">
+  <div class="check">♫</div>
+  <h1 id="t-title">Credits Added!</h1>
+  <div class="subtitle" id="t-sub">Your song credits are ready to use.<br>Search any song and queue it instantly.</div>
 
-<a href="#" class="btn-primary" id="backBtn">Start Requesting Songs</a>
+  <div class="credits-card">
+    <div class="credits-label" id="t-yourCredits">Your credits</div>
+    <div id="loadingSpinner">
+      <div class="spinner"></div>
+      <div class="loading" id="t-loading">Loading your credits...</div>
+    </div>
+    <div id="creditsDisplay" style="display:none">
+      <div class="credits-number" id="creditsNum">0</div>
+      <div class="credits-sub" id="t-remaining">songs remaining</div>
+    </div>
+  </div>
+
+  <div class="how-to">
+    <div class="how-to-title" id="t-howTitle">How to use your credits</div>
+    <div class="how-to-step"><div class="step-num">1</div><span id="t-step1">Search for any song in the jukebox</span></div>
+    <div class="how-to-step"><div class="step-num">2</div><span id="t-step2">Tap the song and choose "Use 1 Credit"</span></div>
+    <div class="how-to-step"><div class="step-num">3</div><span id="t-step3">Your song is instantly added to the bar's queue</span></div>
+  </div>
+
+  <a href="#" class="btn-primary" id="backBtn">Start Requesting Songs</a>
+</div>
 
 <script>
-async function init() {
-  const params = new URLSearchParams(window.location.search);
-  const sessionId = params.get('session_id');
-  const bundle = params.get('bundle');
-  const venueId = params.get('venue_id') || 'default';
+const T = {
+  en: {
+    title: 'Credits Added!', sub: 'Your song credits are ready to use.<br>Search any song and queue it instantly.',
+    yourCredits: 'Your credits', loading: 'Loading your credits...', remaining: 'songs remaining',
+    howTitle: 'How to use your credits', step1: 'Search for any song in the jukebox',
+    step2: 'Tap the song and choose "Use 1 Credit"', step3: "Your song is instantly added to the bar's queue",
+    back: 'Start Requesting Songs',
+    paid: 'Payment received', claimTitle: 'Save your credits',
+    claimSub: n => `Create a free account to keep your ${n} song credit${n === 1 ? '' : 's'}. They'll work at any Zoros bar.`,
+    loginSub: n => `Log in to add your ${n} song credit${n === 1 ? '' : 's'} to your account.`,
+    email: 'Email', password: 'Password (at least 6 characters)', passwordLogin: 'Password',
+    create: 'CREATE ACCOUNT & GET CREDITS', login: 'LOG IN & GET CREDITS',
+    haveAccount: 'Already have an account?', loginLink: 'Log in', noAccount: 'New to Zoros?', signupLink: 'Create an account',
+    safe: "You've already paid. Your credits are saved to this payment until you finish this step.",
+    working: 'One moment...', failed: 'Something went wrong. Try again.', fill: 'Enter your email and a password.'
+  },
+  es: {
+    title: '¡Créditos añadidos!', sub: 'Tus créditos están listos.<br>Busca cualquier canción y ponla en cola al instante.',
+    yourCredits: 'Tus créditos', loading: 'Cargando tus créditos...', remaining: 'canciones disponibles',
+    howTitle: 'Cómo usar tus créditos', step1: 'Busca cualquier canción en Zoros',
+    step2: 'Toca la canción y elige "Usar 1 crédito"', step3: 'Tu canción se añade al instante a la cola del bar',
+    back: 'Empezar a pedir canciones',
+    paid: 'Pago recibido', claimTitle: 'Guarda tus créditos',
+    claimSub: n => `Crea una cuenta gratis para guardar tus ${n} crédito${n === 1 ? '' : 's'}. Funcionan en cualquier bar con Zoros.`,
+    loginSub: n => `Inicia sesión para añadir tus ${n} crédito${n === 1 ? '' : 's'} a tu cuenta.`,
+    email: 'Email', password: 'Contraseña (mínimo 6 caracteres)', passwordLogin: 'Contraseña',
+    create: 'CREAR CUENTA Y RECIBIR CRÉDITOS', login: 'INICIAR SESIÓN Y RECIBIR CRÉDITOS',
+    haveAccount: '¿Ya tienes cuenta?', loginLink: 'Inicia sesión', noAccount: '¿Nuevo en Zoros?', signupLink: 'Crea una cuenta',
+    safe: 'Ya has pagado. Tus créditos quedan guardados en este pago hasta que termines este paso.',
+    working: 'Un momento...', failed: 'Algo salió mal. Inténtalo de nuevo.', fill: 'Escribe tu email y una contraseña.'
+  },
+  nl: {
+    title: 'Tegoed toegevoegd!', sub: 'Je tegoed is klaar voor gebruik.<br>Zoek een nummer en zet het meteen in de wachtrij.',
+    yourCredits: 'Je tegoed', loading: 'Je tegoed laden...', remaining: 'nummers over',
+    howTitle: 'Zo gebruik je je tegoed', step1: 'Zoek een nummer in de jukebox',
+    step2: 'Tik op het nummer en kies "Gebruik 1 tegoed"', step3: 'Je nummer komt meteen in de wachtrij van de bar',
+    back: 'Nummers aanvragen',
+    paid: 'Betaling ontvangen', claimTitle: 'Bewaar je tegoed',
+    claimSub: n => `Maak een gratis account aan om je ${n} tegoed${n === 1 ? '' : 'en'} te bewaren. Ze werken in elke Zoros-bar.`,
+    loginSub: n => `Log in om je ${n} tegoed${n === 1 ? '' : 'en'} aan je account toe te voegen.`,
+    email: 'E-mail', password: 'Wachtwoord (minstens 6 tekens)', passwordLogin: 'Wachtwoord',
+    create: 'ACCOUNT MAKEN & TEGOED KRIJGEN', login: 'INLOGGEN & TEGOED KRIJGEN',
+    haveAccount: 'Heb je al een account?', loginLink: 'Inloggen', noAccount: 'Nieuw bij Zoros?', signupLink: 'Account aanmaken',
+    safe: 'Je hebt al betaald. Je tegoed blijft aan deze betaling gekoppeld tot je deze stap afrondt.',
+    working: 'Even geduld...', failed: 'Er ging iets mis. Probeer het opnieuw.', fill: 'Vul je e-mail en een wachtwoord in.'
+  },
+  fr: {
+    title: 'Crédits ajoutés !', sub: 'Tes crédits sont prêts.<br>Cherche un morceau et ajoute-le à la file instantanément.',
+    yourCredits: 'Tes crédits', loading: 'Chargement de tes crédits...', remaining: 'morceaux restants',
+    howTitle: 'Comment utiliser tes crédits', step1: 'Cherche un morceau dans le jukebox',
+    step2: 'Touche le morceau et choisis « Utiliser 1 crédit »', step3: 'Ton morceau est ajouté à la file du bar instantanément',
+    back: 'Demander des morceaux',
+    paid: 'Paiement reçu', claimTitle: 'Garde tes crédits',
+    claimSub: n => `Crée un compte gratuit pour garder tes ${n} crédit${n === 1 ? '' : 's'}. Ils marchent dans tous les bars Zoros.`,
+    loginSub: n => `Connecte-toi pour ajouter tes ${n} crédit${n === 1 ? '' : 's'} à ton compte.`,
+    email: 'E-mail', password: 'Mot de passe (6 caractères minimum)', passwordLogin: 'Mot de passe',
+    create: 'CRÉER MON COMPTE & RECEVOIR', login: 'ME CONNECTER & RECEVOIR',
+    haveAccount: 'Déjà un compte ?', loginLink: 'Se connecter', noAccount: 'Nouveau sur Zoros ?', signupLink: 'Créer un compte',
+    safe: 'Tu as déjà payé. Tes crédits restent liés à ce paiement jusqu’à la fin de cette étape.',
+    working: 'Un instant...', failed: 'Un problème est survenu. Réessaie.', fill: 'Saisis ton e-mail et un mot de passe.'
+  }
+};
+let L = 'en';
+try { const s = localStorage.getItem('zoros_lang'); if (T[s]) L = s; } catch (e) {}
+const t = k => T[L][k];
+document.documentElement.lang = L;
 
-  document.getElementById('backBtn').href = venueId !== 'default' ? `/?venue=${venueId}` : '/';
+const params = new URLSearchParams(window.location.search);
+const sessionId = params.get('session_id');
+const venueId = params.get('venue_id') || 'default';
+let pendingCredits = 0;
+let mode = 'signup';
 
-  if (sessionId && bundle) {
-    try {
-      const r = await fetch('/api/bundle/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, bundle })
-      });
-      const data = await r.json();
-      if (data.success) {
-        document.getElementById('loadingSpinner').style.display = 'none';
-        document.getElementById('creditsNum').textContent = data.credits;
-        document.getElementById('creditsDisplay').style.display = 'block';
-      } else {
-        document.getElementById('loadingSpinner').innerHTML = `<div style="color:#e74c3c;font-size:13px">${data.error || 'Something went wrong'}</div>`;
-      }
-    } catch(e) {
-      document.getElementById('loadingSpinner').innerHTML = `<div style="color:#e74c3c;font-size:13px">Failed to load credits. Please refresh.</div>`;
+function fillStaticText() {
+  for (const k of ['title', 'yourCredits', 'loading', 'remaining', 'howTitle', 'step1', 'step2', 'step3', 'paid', 'claimTitle', 'email', 'safe']) {
+    const el = document.getElementById('t-' + k);
+    if (el) el.textContent = t(k);
+  }
+  document.getElementById('t-sub').innerHTML = t('sub');
+  document.getElementById('backBtn').textContent = t('back');
+  document.getElementById('backBtn').href = venueId !== 'default' ? `/?venue=${encodeURIComponent(venueId)}` : '/';
+}
+
+function showCredits(n) {
+  document.getElementById('claimStep').classList.add('hidden');
+  document.getElementById('doneStep').classList.remove('hidden');
+  document.getElementById('loadingSpinner').style.display = 'none';
+  document.getElementById('creditsNum').textContent = n;
+  document.getElementById('creditsDisplay').style.display = 'block';
+}
+
+function showError(msg) {
+  document.getElementById('loadingSpinner').innerHTML = `<div style="color:var(--red);font-size:13px">${msg}</div>`;
+}
+
+// Attach the paid bundle to the logged-in account
+async function confirmBundle() {
+  const r = await fetch('/api/bundle/confirm', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId })
+  });
+  const data = await r.json();
+  if (data.success) {
+    try { localStorage.removeItem('zoros_pending_bundle'); } catch (e) {}
+    showCredits(data.credits);
+  }
+  return data;
+}
+
+function setMode(m) {
+  mode = m;
+  const signup = m === 'signup';
+  document.getElementById('t-claimSub').textContent = signup ? t('claimSub')(pendingCredits) : t('loginSub')(pendingCredits);
+  document.getElementById('t-password').textContent = signup ? t('password') : t('passwordLogin');
+  document.getElementById('password').autocomplete = signup ? 'new-password' : 'current-password';
+  document.getElementById('claimBtn').textContent = signup ? t('create') : t('login');
+  document.getElementById('t-switchText').textContent = signup ? t('haveAccount') : t('noAccount');
+  document.getElementById('switchBtn').textContent = signup ? t('loginLink') : t('signupLink');
+  document.getElementById('claimErr').classList.remove('show');
+}
+
+function showClaimStep(email) {
+  document.getElementById('doneStep').classList.add('hidden');
+  document.getElementById('claimStep').classList.remove('hidden');
+  document.getElementById('email').value = email || '';
+  setMode('signup');
+  // Remember the payment so the credits can still be claimed if this page gets closed
+  try { localStorage.setItem('zoros_pending_bundle', sessionId); } catch (e) {}
+}
+
+document.getElementById('switchBtn').addEventListener('click', () => setMode(mode === 'signup' ? 'login' : 'signup'));
+
+document.getElementById('claimForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const err = document.getElementById('claimErr');
+  const btn = document.getElementById('claimBtn');
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  err.classList.remove('show');
+  if (!email || !password) { err.textContent = t('fill'); err.classList.add('show'); return; }
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = t('working');
+  try {
+    const r = await fetch(mode === 'signup' ? '/api/auth/signup' : '/api/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await r.json();
+    if (!data.success) {
+      // Email already has an account: switch to log in with the email kept
+      if (mode === 'signup' && /already registered/i.test(data.error || '')) setMode('login');
+      err.textContent = data.error || t('failed');
+      err.classList.add('show');
+      btn.disabled = false;
+      btn.textContent = mode === 'signup' ? t('create') : t('login');
+      return;
     }
-  } else {
-    // Just show current credits
+    const done = await confirmBundle();
+    if (!done.success) {
+      err.textContent = done.error || t('failed');
+      err.classList.add('show');
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  } catch (e2) {
+    err.textContent = t('failed');
+    err.classList.add('show');
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+});
+
+async function init() {
+  fillStaticText();
+  if (!sessionId) {
+    // Opened without a payment: just show current credits
     try {
       const r = await fetch('/api/auth/me');
       const data = await r.json();
-      if (data.loggedIn) {
-        document.getElementById('loadingSpinner').style.display = 'none';
-        document.getElementById('creditsNum').textContent = data.user.credits;
-        document.getElementById('creditsDisplay').style.display = 'block';
-      }
-    } catch(e) {}
+      if (data.loggedIn) showCredits(data.user.credits);
+    } catch (e) {}
+    return;
+  }
+  try {
+    const me = await fetch('/api/auth/me').then(r => r.json()).catch(() => ({}));
+    if (me.loggedIn) {
+      const data = await confirmBundle();
+      if (!data.success) showError(data.error || t('failed'));
+      return;
+    }
+    // Not logged in: paid as a guest, so ask them to create an account to receive the credits
+    const p = await fetch(`/api/bundle/pending?session_id=${encodeURIComponent(sessionId)}`).then(r => r.json());
+    if (!p.paid) { showError(p.error || t('failed')); return; }
+    pendingCredits = p.credits;
+    showClaimStep(p.email);
+  } catch (e) {
+    showError(t('failed'));
   }
 }
 
