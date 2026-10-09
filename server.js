@@ -62,8 +62,9 @@ async function claimPayment(sessionId, kind, stripeSession) {
   const m = s.metadata || {};
   try {
     await pool.query(
-      'INSERT INTO processed_payments (session_id, kind, amount, venue_id, src, livemode) VALUES ($1, $2, $3, $4, $5, $6)',
-      [sessionId, kind, s.amount_total ?? null, m.venueId || null, m.src || null, stripeSession ? !!s.livemode : null]
+      'INSERT INTO processed_payments (session_id, kind, amount, venue_id, src, livemode, split_to, bar_amount) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [sessionId, kind, s.amount_total ?? null, m.venueId || null, m.src || null, stripeSession ? !!s.livemode : null,
+       m.splitTo || null, m.splitTo ? parseInt(m.barAmount, 10) || null : null]
     );
   } catch (e) {
     if (e.code === '23505' || /duplicate|unique/i.test(e.message)) return false; // already claimed
@@ -81,7 +82,11 @@ async function recordStripeFee(sessionId, s) {
     const pi = await stripe.paymentIntents.retrieve(piId, { expand: ['latest_charge.balance_transaction'] });
     const bt = pi && pi.latest_charge && pi.latest_charge.balance_transaction;
     if (bt && typeof bt.fee === 'number') {
-      await pool.query('UPDATE processed_payments SET stripe_fee = $1 WHERE session_id = $2', [bt.fee, sessionId]);
+      // Prices are in euros, but Stripe reports the fee in the Zoros account's own currency (USD).
+      // Convert back with the payment's exchange rate so fees and prices are in the same currency.
+      const sameCurrency = !s.currency || bt.currency === s.currency;
+      const fee = sameCurrency ? bt.fee : (bt.exchange_rate ? Math.round(bt.fee / bt.exchange_rate) : null);
+      if (fee != null) await pool.query('UPDATE processed_payments SET stripe_fee = $1 WHERE session_id = $2', [fee, sessionId]);
     }
   } catch (e) {
     console.error('[stats] Stripe fee lookup failed:', e.message);
@@ -177,6 +182,12 @@ async function initDB() {
       ADD COLUMN IF NOT EXISTS src VARCHAR(64),
       ADD COLUMN IF NOT EXISTS livemode BOOLEAN,
       ADD COLUMN IF NOT EXISTS stripe_fee INTEGER`);
+    // Automatic split (Stripe Connect): the bar's connected account, and per payment whether
+    // Stripe paid the bar directly and how much (euro cents)
+    await pool.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS stripe_account_id VARCHAR(255)`);
+    await pool.query(`ALTER TABLE processed_payments
+      ADD COLUMN IF NOT EXISTS split_to VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS bar_amount INTEGER`);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS page_visits (
         id SERIAL PRIMARY KEY,
@@ -656,6 +667,40 @@ app.post('/api/admin/sync-users', async (req, res) => {
   }
 });
 
+// Link (or unlink, with an empty ID) a bar's Stripe connected account for the automatic split.
+// Saved even if onboarding isn't finished; checkouts only split once Stripe says it's enabled.
+app.post('/api/admin/stripe-account', async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Unauthorized' });
+  const venueId = String((req.body && req.body.venueId) || '').trim();
+  const acct = String((req.body && req.body.accountId) || '').trim();
+  if (acct && !/^acct_[A-Za-z0-9]+$/.test(acct)) return res.status(400).json({ error: 'A Stripe account ID starts with acct_' });
+  try {
+    const r = await pool.query('UPDATE venues SET stripe_account_id = $1 WHERE venue_id = $2 RETURNING name', [acct || null, venueId]);
+    if (!r.rows.length) return res.status(404).json({ error: 'No bar account with that venue ID' });
+    if (!acct) return res.json({ success: true, linked: false });
+    const status = await connectedAccountStatus(acct, { fresh: true });
+    res.json({ success: true, linked: true, ready: status.ok, status: status.reason });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Current Stripe status of every linked bar, for the dashboard
+app.get('/api/admin/stripe-status', async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const r = await pool.query('SELECT venue_id, stripe_account_id FROM venues WHERE stripe_account_id IS NOT NULL');
+    const out = {};
+    for (const v of r.rows) {
+      const s = await connectedAccountStatus(v.stripe_account_id);
+      out[v.venue_id] = { ready: s.ok, status: s.reason };
+    }
+    res.json({ success: true, bars: out });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── PAGE VISIT TRACKING (patron app opens) ──
 app.post('/api/track/visit', async (req, res) => {
   const { venueId, src, visitorId } = req.body || {};
@@ -697,6 +742,9 @@ app.get('/api/admin/stats', async (req, res) => {
   const payWhere = `${inRange('p.created_at')} AND ($2::boolean = false OR p.livemode = true) AND ${venueOk('p.venue_id')}`;
   // Stripe fee: real when known, otherwise estimated at the standard EU card rate (1.5% + €0.25)
   const feeExpr = `COALESCE(p.stripe_fee, ROUND(p.amount * 0.015) + 25)`;
+  // The bar's cut of a payment: 75% after the Stripe fee. When Stripe split it automatically,
+  // use exactly what Stripe sent the bar.
+  const barExpr = `COALESCE(p.bar_amount, ROUND((p.amount - ${feeExpr}) * ${BAR_SHARE}))`;
   try {
     const q = (sql, ps = params) => pool.query(sql, ps).then(r => r.rows);
     const [
@@ -707,22 +755,27 @@ app.get('/api/admin/stats', async (req, res) => {
                 COALESCE(SUM(p.amount), 0)::int AS revenue,
                 COALESCE(SUM(${feeExpr}), 0)::int AS fees,
                 COUNT(*) FILTER (WHERE p.stripe_fee IS NULL)::int AS fees_estimated,
-                COUNT(*) FILTER (WHERE p.kind = 'bundle')::int AS bundles
+                COUNT(*) FILTER (WHERE p.kind = 'bundle')::int AS bundles,
+                COALESCE(SUM(${barExpr}), 0)::int AS bar_share
          FROM processed_payments p WHERE p.amount IS NOT NULL AND ${payWhere}`),
       q(`SELECT p.venue_id, COUNT(*)::int AS payments, COALESCE(SUM(p.amount), 0)::int AS revenue,
-                COALESCE(SUM(${feeExpr}), 0)::int AS fees
+                COALESCE(SUM(${feeExpr}), 0)::int AS fees, COALESCE(SUM(${barExpr}), 0)::int AS bar_share
          FROM processed_payments p WHERE p.amount IS NOT NULL AND ${payWhere} GROUP BY p.venue_id`),
       q(`SELECT s.venue_id, COUNT(*)::int AS songs, MAX(s.added_at) AS last_song
          FROM songs s WHERE ${inRange('s.added_at')} AND ${aVenueOk('s.venue_id')} GROUP BY s.venue_id`, aParams),
       q(`SELECT v.venue_id, COUNT(*)::int AS visits, COUNT(DISTINCT v.visitor_id)::int AS visitors
          FROM page_visits v WHERE ${inRange('v.created_at')} AND ${aVenueOk('v.venue_id')} GROUP BY v.venue_id`, aParams),
-      q(`SELECT v.venue_id, v.name, v.city, v.is_active, v.created_at,
+      q(`SELECT v.venue_id, v.name, v.city, v.is_active, v.created_at, v.stripe_account_id,
                 (t.venue_id IS NOT NULL) AS spotify_connected
          FROM venues v LEFT JOIN venue_tokens t ON t.venue_id = v.venue_id ORDER BY v.created_at`, []),
-      // What each bar is owed: always live payments only, all time, minus payouts already made
-      q(`SELECT x.venue_id, x.live_revenue, COALESCE(po.paid, 0)::int AS paid_out
-         FROM (SELECT venue_id, SUM(amount)::int AS live_revenue FROM processed_payments
-               WHERE livemode = true AND amount IS NOT NULL GROUP BY venue_id) x
+      // What each bar is owed by hand: live payments only, all time, 75% after Stripe fees, minus
+      // payouts already recorded. Payments Stripe split automatically are already paid, so left out.
+      q(`SELECT x.venue_id, x.live_share, x.auto_paid, COALESCE(po.paid, 0)::int AS paid_out
+         FROM (SELECT p.venue_id,
+                      COALESCE(SUM(${barExpr}) FILTER (WHERE p.split_to IS NULL), 0)::int AS live_share,
+                      COALESCE(SUM(p.bar_amount) FILTER (WHERE p.split_to IS NOT NULL), 0)::int AS auto_paid
+               FROM processed_payments p
+               WHERE p.livemode = true AND p.amount IS NOT NULL GROUP BY p.venue_id) x
          LEFT JOIN (SELECT venue_id, SUM(amount) AS paid FROM venue_payouts GROUP BY venue_id) po
            ON po.venue_id = x.venue_id`, []),
       // Last 30 nights, Madrid time, with a 6am cutoff so 1am sales count as the night before
@@ -752,32 +805,31 @@ app.get('/api/admin/stats', async (req, res) => {
     ]);
 
     const t = totals[0];
-    const barShare = Math.round(t.revenue * BAR_SHARE);
+    const barShare = t.bar_share;
 
     // One row per bar: every registered venue, plus any venue id that has activity but no account (e.g. demo)
     const byId = {};
     const row = (id) => byId[id] || (byId[id] = {
       venue_id: id, name: null, is_active: null, spotify_connected: false,
       payments: 0, revenue: 0, fees: 0, songs: 0, last_song: null, visits: 0, visitors: 0,
-      live_revenue: 0, paid_out: 0
+      bar_share: 0, live_share: 0, auto_paid: 0, paid_out: 0
     });
     venues.forEach(v => {
       if (!includeDemo && TEST_VENUES.includes(v.venue_id)) return;
-      Object.assign(row(v.venue_id), { name: v.name, city: v.city, is_active: v.is_active, spotify_connected: v.spotify_connected, created_at: v.created_at });
+      Object.assign(row(v.venue_id), { name: v.name, city: v.city, is_active: v.is_active, spotify_connected: v.spotify_connected, created_at: v.created_at, stripe_account_id: v.stripe_account_id });
     });
-    payByVenue.forEach(r => { if (r.venue_id) Object.assign(row(r.venue_id), { payments: r.payments, revenue: r.revenue, fees: r.fees }); });
+    payByVenue.forEach(r => { if (r.venue_id) Object.assign(row(r.venue_id), { payments: r.payments, revenue: r.revenue, fees: r.fees, bar_share: r.bar_share }); });
     songsByVenue.forEach(r => { if (r.venue_id) Object.assign(row(r.venue_id), { songs: r.songs, last_song: r.last_song }); });
     visitsByVenue.forEach(r => { if (r.venue_id) Object.assign(row(r.venue_id), { visits: r.visits, visitors: r.visitors }); });
     owedRows.forEach(r => {
       if (!r.venue_id || (!includeDemo && TEST_VENUES.includes(r.venue_id))) return;
-      Object.assign(row(r.venue_id), { live_revenue: r.live_revenue, paid_out: r.paid_out });
+      Object.assign(row(r.venue_id), { live_share: r.live_share, auto_paid: r.auto_paid, paid_out: r.paid_out });
     });
     const removed = new Set(removedRows.map(r => r.venue_id));
     const allBars = Object.values(byId).map(b => ({
       ...b,
       removed: removed.has(b.venue_id),
-      bar_share: Math.round(b.revenue * BAR_SHARE),
-      owed: Math.max(0, Math.round(b.live_revenue * BAR_SHARE) - b.paid_out)
+      owed: Math.max(0, b.live_share - b.paid_out)
     })).sort((a, b) => b.revenue - a.revenue || b.songs - a.songs);
     // Removed bars are hidden unless asked for, but money still owed to them stays in the totals
     const bars = showRemoved ? allBars : allBars.filter(b => !b.removed);
@@ -856,7 +908,7 @@ app.post('/api/create-bundle-payment', async (req, res) => {
   const bundle = bundles[bundleType];
   if (!bundle) return res.status(400).json({ error: 'Invalid bundle' });
   try {
-    const session = await stripe.checkout.sessions.create({
+    const session = await createCheckout({
       locale: stripeLocale(lang),
       payment_method_types: ['card'],
       line_items: [{
@@ -874,7 +926,7 @@ app.post('/api/create-bundle-payment', async (req, res) => {
       metadata: { bundleType, userId: String(req.session.userId), venueId: String(venueId), src: cleanSrc(src) || '' },
       success_url: `${process.env.BASE_URL}/bundle-success?session_id={CHECKOUT_SESSION_ID}&bundle=${bundleType}&venue_id=${venueId}`,
       cancel_url: `${process.env.BASE_URL}?venue=${venueId}`
-    });
+    }, venueId, bundle.price);
     res.json({ url: session.url });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1467,6 +1519,71 @@ app.get('/api/search', async (req, res) => {
 
 const SONG_PRICE = 99; // cents, EUR
 
+// ── AUTOMATIC SPLIT (STRIPE CONNECT) ──
+// The bar gets BAR_SHARE (75%) of each payment after the Stripe fee; Zoros keeps the rest.
+// Zoros's share has to be fixed when the checkout is created, before Stripe knows the exact
+// fee, so the fee is estimated at Stripe's standard European card rate (1.5% + €0.25). For a
+// non-European card the real fee is a little higher and Zoros absorbs the difference.
+// Payments are made on behalf of the bar's connected account (needed because the Zoros
+// platform account and the bar are in different regions), and Stripe moves the bar's share to it.
+const estimatedStripeFee = amount => Math.round(amount * 0.015) + 25;
+const barShareOf = (amount, fee) => Math.round((amount - fee) * BAR_SHARE);
+
+// Is this connected account ready to be paid? Cached for 10 minutes so checkouts stay fast.
+const connectReady = new Map(); // acct -> { ok, reason, at }
+async function connectedAccountStatus(acct, { fresh = false } = {}) {
+  const hit = connectReady.get(acct);
+  if (!fresh && hit && Date.now() - hit.at < 10 * 60 * 1000) return hit;
+  let status;
+  try {
+    const a = await stripe.accounts.retrieve(acct);
+    const caps = a.capabilities || {};
+    const ok = !!a.charges_enabled && caps.card_payments === 'active' && caps.transfers === 'active';
+    status = { ok, reason: ok ? 'Enabled' : 'Waiting on the bar to finish Stripe onboarding' };
+  } catch (e) {
+    status = { ok: false, reason: `Stripe couldn't find or read this account (${e.message})` };
+  }
+  status.at = Date.now();
+  connectReady.set(acct, status);
+  return status;
+}
+
+// Extra Checkout settings that split this payment with the bar, or null to keep today's
+// behaviour (all to Zoros, bar paid by hand from the dashboard's "Owed")
+async function splitForVenue(venueId, amount) {
+  try {
+    const r = await pool.query('SELECT stripe_account_id FROM venues WHERE venue_id = $1', [venueId]);
+    const acct = r.rows[0] && r.rows[0].stripe_account_id;
+    if (!acct || !(await connectedAccountStatus(acct)).ok) return null;
+    const barAmount = barShareOf(amount, estimatedStripeFee(amount));
+    return {
+      acct, barAmount,
+      paymentIntentData: { on_behalf_of: acct, transfer_data: { destination: acct }, application_fee_amount: amount - barAmount }
+    };
+  } catch (e) {
+    console.error('[connect] split lookup failed, paying Zoros only:', e.message);
+    return null;
+  }
+}
+
+// Creates the Checkout session, split with the bar when possible. If Stripe refuses the split,
+// the payment is created without it so the patron can always pay.
+async function createCheckout(params, venueId, amount) {
+  const split = await splitForVenue(venueId, amount);
+  if (split) {
+    try {
+      return await stripe.checkout.sessions.create({
+        ...params,
+        payment_intent_data: split.paymentIntentData,
+        metadata: { ...params.metadata, splitTo: split.acct, barAmount: String(split.barAmount) }
+      });
+    } catch (e) {
+      console.error(`[connect] split refused for ${venueId}, paying Zoros only:`, e.message);
+    }
+  }
+  return stripe.checkout.sessions.create(params);
+}
+
 // Show Stripe's checkout page in the language the patron picked in Zoros
 function stripeLocale(lang) {
   return ['en', 'es', 'nl', 'fr'].includes(lang) ? lang : 'auto';
@@ -1485,7 +1602,7 @@ app.post('/api/create-payment', async (req, res) => {
     if (!(await uriAllowedForVenue(venueId, uri))) {
       return res.status(400).json({ error: 'blocked', blocked: true });
     }
-    const session = await stripe.checkout.sessions.create({
+    const session = await createCheckout({
       locale: stripeLocale(lang),
       payment_method_types: ['card'],
       line_items: [{
@@ -1512,7 +1629,7 @@ app.post('/api/create-payment', async (req, res) => {
       },
       success_url: `${process.env.BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}&track_id=${trackId}&track_name=${encodeURIComponent(trackName)}&artist=${encodeURIComponent(artist)}&image=${encodeURIComponent(image || '')}&uri=${encodeURIComponent(uri)}&venue_id=${venueId}`,
       cancel_url: `${process.env.BASE_URL}?venue=${venueId}`
-    });
+    }, venueId, price);
     res.json({ url: session.url });
   } catch (e) {
     res.status(500).json({ error: e.message });
