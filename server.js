@@ -185,6 +185,17 @@ async function initDB() {
     // Automatic split (Stripe Connect): the bar's connected account, and per payment whether
     // Stripe paid the bar directly and how much (euro cents)
     await pool.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS stripe_account_id VARCHAR(255)`);
+    // Songs a bar removed after they were already sent to Spotify. Spotify can't delete from a
+    // queue, so Zoros skips each one the moment it starts playing.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS spotify_skips (
+        id SERIAL PRIMARY KEY,
+        venue_id VARCHAR(255) NOT NULL,
+        uri VARCHAR(255) NOT NULL,
+        name VARCHAR(500),
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
     await pool.query(`ALTER TABLE processed_payments
       ADD COLUMN IF NOT EXISTS split_to VARCHAR(255),
       ADD COLUMN IF NOT EXISTS bar_amount INTEGER`);
@@ -1263,7 +1274,48 @@ async function autoClearPlayed() {
   }
 }
 
+// ── SKIP SONGS THE BAR REMOVED ──
+// Every 4 seconds, for bars with a removed song still in Spotify's queue: if that song is now
+// playing, skip it. Each removal skips one play. Removals expire after 3 hours.
+async function skipRemovedSongs() {
+  try {
+    await pool.query("DELETE FROM spotify_skips WHERE created_at < NOW() - INTERVAL '3 hours'");
+    const venues = await pool.query('SELECT DISTINCT venue_id FROM spotify_skips');
+    for (const { venue_id } of venues.rows) {
+      try {
+        const token = await getVenueToken(venue_id);
+        if (!token) continue;
+        const nowRes = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (nowRes.status !== 200) continue;
+        const now = await nowRes.json();
+        const uri = now && now.item && now.item.uri;
+        if (!uri) continue;
+        const skip = await pool.query(
+          'SELECT id, name FROM spotify_skips WHERE venue_id = $1 AND uri = $2 ORDER BY created_at LIMIT 1',
+          [venue_id, uri]
+        );
+        if (!skip.rows.length) continue;
+        const r = await fetch('https://api.spotify.com/v1/me/player/next', {
+          method: 'POST', headers: { Authorization: `Bearer ${token}` }
+        });
+        if (r.ok) {
+          await pool.query('DELETE FROM spotify_skips WHERE id = $1', [skip.rows[0].id]);
+          console.log(`[skip-removed] Skipped removed song "${skip.rows[0].name}" at ${venue_id}`);
+        }
+      } catch (e) {
+        // try again on the next round
+      }
+    }
+  } catch (e) {
+    console.error('[skip-removed] Error:', e.message);
+  }
+}
+
 setTimeout(() => {
+  skipRemovedSongs();
+  setInterval(skipRemovedSongs, 4000);
   autoClearPlayed();
   setInterval(autoClearPlayed, 10000);
   retryPendingSpotify();
@@ -1709,11 +1761,20 @@ app.post('/api/queue/played/:id', requireVenueAuth, async (req, res) => {
   }
 });
 
-// Only the logged-in bar can remove songs from its own queue
+// Only the logged-in bar can remove songs from its own queue. If the song already went to
+// Spotify (which can't delete from its queue), it's also marked to be skipped when it starts.
 app.post('/api/queue/skip/:id', requireVenueAuth, async (req, res) => {
   try {
-    await pool.query("DELETE FROM songs WHERE id = $1 AND venue_id = $2", [req.params.id, req.session.venueId]);
-    res.json({ success: true });
+    const r = await pool.query(
+      "DELETE FROM songs WHERE id = $1 AND venue_id = $2 AND status = 'queued' RETURNING uri, name, added_to_spotify",
+      [req.params.id, req.session.venueId]
+    );
+    const song = r.rows[0];
+    const willSkip = !!(song && song.added_to_spotify && song.uri);
+    if (willSkip) {
+      await pool.query('INSERT INTO spotify_skips (venue_id, uri, name) VALUES ($1, $2, $3)', [req.session.venueId, song.uri, song.name]);
+    }
+    res.json({ success: true, willSkip });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

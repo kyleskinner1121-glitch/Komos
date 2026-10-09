@@ -1266,6 +1266,8 @@
   }
 
   async function removeSong(id) {
+    const msg = currentLang === 'es' ? '¿Quitar esta canción?' : 'Remove this song?';
+    if (!confirm(msg)) return;
     await fetch(`/api/queue/skip/${id}`, { method: 'POST' });
     loadQueue();
   }
