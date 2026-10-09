@@ -1059,30 +1059,64 @@ async function getVenueSettings(venueId) {
   }
 }
 
-// Artist genres rarely change, so remember them for a day to keep Spotify calls low.
-const artistGenreCache = new Map();
-async function getArtistGenres(artistId) {
-  if (!artistId) return [];
-  const hit = artistGenreCache.get(artistId);
-  if (hit && Date.now() - hit.at < 24 * 60 * 60 * 1000) return hit.genres;
+// Genre words are compared lowercased with dashes as spaces ("Hip-Hop" -> "hip hop").
+const normGenre = g => String(g).toLowerCase().replace(/[-_]+/g, ' ').trim();
+
+// Spotify's own artist genres. Spotify has been returning empty or vague genres for
+// many artists, so this alone lets songs slip past the filter.
+async function spotifyArtistGenres(artistId) {
+  if (!artistId) return { genres: [], ok: true };
   try {
     const token = await getSpotifyToken();
     const r = await fetch(`https://api.spotify.com/v1/artists/${artistId}`, { headers: { Authorization: `Bearer ${token}` } });
-    if (!r.ok) return [];
+    if (!r.ok) return { genres: [], ok: false };
     const data = await r.json();
-    const genres = (data.genres || []).map(g => g.toLowerCase());
-    artistGenreCache.set(artistId, { genres, at: Date.now() });
-    return genres;
+    return { genres: (data.genres || []).map(normGenre), ok: true };
   } catch (e) {
-    return [];
+    return { genres: [], ok: false };
   }
 }
 
-// track needs { explicit, artistId }. Returns true if the bar's settings allow it.
+// Last.fm artist tags: a second, much fuller genre source (e.g. John Summit -> house, tech house).
+// Only the strong tags count (Last.fm scores 0-100), so one-off joke tags don't block songs.
+// Needs LASTFM_API_KEY in Railway; without it, only Spotify's genres are used.
+async function lastfmArtistTags(artistName) {
+  const key = process.env.LASTFM_API_KEY;
+  if (!key || !artistName) return { genres: [], ok: true };
+  try {
+    const url = `https://ws.audioscrobbler.com/2.0/?method=artist.gettoptags&autocorrect=1&format=json`
+      + `&artist=${encodeURIComponent(artistName)}&api_key=${encodeURIComponent(key)}`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    if (!r.ok) return { genres: [], ok: false };
+    const data = await r.json();
+    const tags = (data.toptags && data.toptags.tag) || [];
+    return {
+      genres: tags.filter(t => Number(t.count) >= 25).slice(0, 6).map(t => normGenre(t.name)),
+      ok: !data.error || data.error === 6 // 6 = artist not found on Last.fm
+    };
+  } catch (e) {
+    return { genres: [], ok: false };
+  }
+}
+
+// Artist genres rarely change, so remember them for a day to keep API calls low.
+// A lookup that failed isn't remembered, so it's retried on the next search.
+const artistGenreCache = new Map();
+async function getArtistGenres(artistId, artistName) {
+  const cacheKey = artistId || `name:${artistName || ''}`;
+  const hit = artistGenreCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < 24 * 60 * 60 * 1000) return hit.genres;
+  const [sp, lf] = await Promise.all([spotifyArtistGenres(artistId), lastfmArtistTags(artistName)]);
+  const genres = [...new Set([...sp.genres, ...lf.genres])];
+  if (sp.ok && lf.ok) artistGenreCache.set(cacheKey, { genres, at: Date.now() });
+  return genres;
+}
+
+// track needs { explicit, artistId, artistName }. Returns true if the bar's settings allow it.
 async function trackAllowed(track, settings) {
   if (settings.blockExplicit && track.explicit) return false;
   if (!settings.blockedGenres.length) return true;
-  const genres = await getArtistGenres(track.artistId);
+  const genres = await getArtistGenres(track.artistId, track.artistName);
   return !settings.blockedGenres.some(id =>
     GENRE_KEYWORDS[id].some(word => genres.some(g => g.includes(word)))
   );
@@ -1100,7 +1134,11 @@ async function uriAllowedForVenue(venueId, uri) {
     const r = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, { headers: { Authorization: `Bearer ${token}` } });
     if (!r.ok) return true; // don't block a sale because Spotify hiccuped
     const t = await r.json();
-    return trackAllowed({ explicit: t.explicit, artistId: t.artists && t.artists[0] && t.artists[0].id }, settings);
+    return trackAllowed({
+      explicit: t.explicit,
+      artistId: t.artists && t.artists[0] && t.artists[0].id,
+      artistName: t.artists && t.artists[0] && t.artists[0].name
+    }, settings);
   } catch (e) {
     return true;
   }
@@ -1497,6 +1535,7 @@ app.get('/api/search', async (req, res) => {
       name: t.name,
       artist: t.artists.map(a => a.name).join(', '),
       artistId: t.artists[0] && t.artists[0].id,
+      artistName: t.artists[0] && t.artists[0].name,
       explicit: !!t.explicit,
       album: t.album.name,
       image: t.album.images[1]?.url || t.album.images[0]?.url,
