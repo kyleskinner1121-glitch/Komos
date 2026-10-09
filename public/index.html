@@ -170,6 +170,7 @@
   .track-card:hover { border-color: var(--orange); }
   .track-img { width: 52px; height: 52px; border-radius: 6px; object-fit: cover; flex-shrink: 0; background: var(--border); }
   .track-info { flex: 1; min-width: 0; }
+  .genre-note { font-size: 12px; color: var(--muted); margin: -4px 0 10px; line-height: 1.4; }
   .track-name { font-size: 14px; font-weight: 500; color: var(--white); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .track-artist { font-size: 12px; color: var(--muted); font-weight: 300; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .track-price { font-size: 13px; font-weight: 600; color: var(--white); flex-shrink: 0; background: var(--orange); padding: 6px 10px; border-radius: 6px; }
@@ -465,7 +466,9 @@ const T = {
     searchPlaceholder: 'Search artist or song...',
     resultsLabel: 'Results',
     noResults: 'No results found.\nTry a different search.',
-    songBlocked: "This bar isn't taking requests for that song.",
+    songBlocked: "This bar restricts certain genres, so that song isn't available here.",
+    genreAllBlocked: "This bar restricts certain genres, so these songs aren't available here.\nTry a different artist or song.",
+    genreSomeBlocked: 'Some songs are hidden because this bar restricts certain genres.',
     notPlaying: "Zoros isn't playing music right now. Ask your bartender to activate Zoros, then try again. You haven't been charged.",
     cancel: 'Cancel',
     useCredit: 'USE 1 CREDIT — PLAY THIS SONG',
@@ -511,7 +514,9 @@ const T = {
     searchPlaceholder: 'Busca artista o canción...',
     resultsLabel: 'Resultados',
     noResults: 'Sin resultados.\nIntenta otra búsqueda.',
-    songBlocked: 'Este bar no acepta peticiones de esa canción.',
+    songBlocked: 'Este bar restringe ciertos géneros, así que esa canción no está disponible aquí.',
+    genreAllBlocked: 'Este bar restringe ciertos géneros, así que estas canciones no están disponibles aquí.\nPrueba con otro artista o canción.',
+    genreSomeBlocked: 'Algunas canciones están ocultas porque este bar restringe ciertos géneros.',
     notPlaying: 'Zoros no está reproduciendo música ahora mismo. Pídele al camarero que active Zoros e inténtalo de nuevo. No se te ha cobrado nada.',
     cancel: 'Cancelar',
     useCredit: 'USAR 1 CRÉDITO — PONER ESTA CANCIÓN',
@@ -557,7 +562,9 @@ const T = {
     searchPlaceholder: 'Zoek artiest of nummer...',
     resultsLabel: 'Resultaten',
     noResults: 'Geen resultaten gevonden.\nProbeer een andere zoekopdracht.',
-    songBlocked: 'Deze bar accepteert geen verzoeken voor dat nummer.',
+    songBlocked: 'Deze bar beperkt bepaalde genres, dus dat nummer is hier niet beschikbaar.',
+    genreAllBlocked: 'Deze bar beperkt bepaalde genres, dus deze nummers zijn hier niet beschikbaar.\nProbeer een andere artiest of een ander nummer.',
+    genreSomeBlocked: 'Sommige nummers zijn verborgen omdat deze bar bepaalde genres beperkt.',
     notPlaying: 'Zoros speelt nu geen muziek. Vraag de barman om Zoros te activeren en probeer het opnieuw. Er is niets afgeschreven.',
     cancel: 'Annuleren',
     useCredit: 'GEBRUIK 1 TEGOED — SPEEL DIT NUMMER',
@@ -603,7 +610,9 @@ const T = {
     searchPlaceholder: 'Cherche un artiste ou un morceau...',
     resultsLabel: 'Résultats',
     noResults: 'Aucun résultat.\nEssaie une autre recherche.',
-    songBlocked: "Ce bar n'accepte pas de demandes pour ce morceau.",
+    songBlocked: "Ce bar limite certains genres, ce morceau n'est donc pas disponible ici.",
+    genreAllBlocked: "Ce bar limite certains genres, ces morceaux ne sont donc pas disponibles ici.\nEssaie un autre artiste ou un autre morceau.",
+    genreSomeBlocked: 'Certains morceaux sont masqués car ce bar limite certains genres.',
     notPlaying: "Zoros ne joue pas de musique pour le moment. Demande au barman d'activer Zoros, puis réessaie. Tu n'as pas été débité.",
     cancel: 'Annuler',
     useCredit: 'UTILISER 1 CRÉDIT — JOUER CE MORCEAU',
@@ -914,18 +923,21 @@ async function search(q) {
   try {
     const r = await fetch(`/api/search?q=${encodeURIComponent(q)}&venueId=${encodeURIComponent(VENUE_ID)}`);
     const data = await r.json();
-    renderTracks(data.tracks || []);
+    renderTracks(data.tracks || [], data.hidden || 0);
   } catch(e) { showError(); }
 }
 
-function renderTracks(tracks) {
+function renderTracks(tracks, hidden = 0) {
   const el = document.getElementById('results');
   if (!tracks.length) {
-    el.innerHTML = `<div class="empty"><div class="icon">🔍</div><p>${t('noResults').replace('\n','<br>')}</p></div>`;
+    // Every result was filtered out by the bar's genre settings: say so instead of "no results"
+    const msg = hidden > 0 ? t('genreAllBlocked') : t('noResults');
+    el.innerHTML = `<div class="empty"><div class="icon">${hidden > 0 ? '🎚️' : '🔍'}</div><p>${msg.replace('\n','<br>')}</p></div>`;
     return;
   }
+  const genreNote = hidden > 0 ? `<p class="genre-note">${t('genreSomeBlocked')}</p>` : '';
   const priceLabel = currentUser && currentUser.credits > 0 ? t('oneCreditLabel') : '€0.99';
-  el.innerHTML = `<p class="section-label">${t('resultsLabel')}</p>` + tracks.map(tr => `
+  el.innerHTML = `<p class="section-label">${t('resultsLabel')}</p>` + genreNote + tracks.map(tr => `
     <div class="track-card" onclick='selectTrack(${JSON.stringify(tr).replace(/'/g, "&#39;")})'>
       <img class="track-img" src="${tr.image || ''}" onerror="this.style.background='#3D3284'" alt="">
       <div class="track-info">
