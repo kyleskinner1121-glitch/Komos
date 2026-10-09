@@ -189,6 +189,11 @@
   .queue-info { flex: 1; min-width: 0; }
   .queue-info .name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .queue-info .artist { font-size: 11px; color: var(--muted); }
+  .queue-note { font-size: 12px; color: var(--muted); line-height: 1.4; margin: -6px 0 8px; }
+  .queue-src { flex-shrink: 0; font-size: 10px; font-weight: 600; letter-spacing: 0.3px; padding: 4px 8px; border-radius: 999px; text-transform: uppercase; }
+  .queue-src.zoros { background: var(--orange); color: var(--white); }
+  .queue-src.bar { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .queue-item.from-bar .queue-num { color: var(--muted); }
   .overlay { position: fixed; inset: 0; background: rgba(18,14,46,0.85); z-index: 199; display: none; backdrop-filter: blur(4px); }
   .overlay.show { display: block; }
 
@@ -465,6 +470,9 @@ const T = {
     bundleNote: '4 and 7 song credits are stored in your account and work at any Zoros venue.',
     queueBtn: 'Queue',
     upNext: 'Up Next',
+    srcBar: "Bar's queue",
+    srcZoros: 'Request',
+    queueBarNote: 'Includes songs the bar queued itself. Everything plays in this order.',
     emptyQueue: 'Queue is empty.\nBe the first to request a song.',
     emptySearch: 'Search for any song and\nadd it to the bar\'s queue',
     searchPlaceholder: 'Search artist or song...',
@@ -517,6 +525,9 @@ const T = {
     bundleNote: 'Los créditos se guardan en tu cuenta y funcionan en cualquier local Zoros.',
     queueBtn: 'Cola',
     upNext: 'A Continuación',
+    srcBar: 'Cola del bar',
+    srcZoros: 'Petición',
+    queueBarNote: 'Incluye canciones que el bar puso en cola. Todo suena en este orden.',
     emptyQueue: 'La cola está vacía.\nSé el primero en pedir una canción.',
     emptySearch: 'Busca cualquier canción y\nañádela a la cola del bar',
     searchPlaceholder: 'Busca artista o canción...',
@@ -569,6 +580,9 @@ const T = {
     bundleNote: '4 en 7 tegoeden worden opgeslagen in je account en werken bij elke Zoros-locatie.',
     queueBtn: 'Wachtrij',
     upNext: 'Hierna',
+    srcBar: 'Wachtrij bar',
+    srcZoros: 'Verzoek',
+    queueBarNote: 'Inclusief nummers die de bar zelf in de wachtrij zette. Alles speelt in deze volgorde.',
     emptyQueue: 'De wachtrij is leeg.\nVraag als eerste een nummer aan.',
     emptySearch: 'Zoek een nummer en\nvoeg het toe aan de wachtrij van de zaak',
     searchPlaceholder: 'Zoek artiest of nummer...',
@@ -621,6 +635,9 @@ const T = {
     bundleNote: 'Les crédits de 4 et 7 sont enregistrés sur ton compte et fonctionnent dans tous les bars Zoros.',
     queueBtn: 'File',
     upNext: 'À Suivre',
+    srcBar: "File du bar",
+    srcZoros: 'Demande',
+    queueBarNote: "Inclut les morceaux mis en file par le bar. Tout passe dans cet ordre.",
     emptyQueue: 'La file est vide.\nSois le premier à demander un morceau.',
     emptySearch: 'Cherche un morceau et\najoute-le à la file du bar',
     searchPlaceholder: 'Cherche un artiste ou un morceau...',
@@ -1107,7 +1124,7 @@ async function loadQueue() {
   try {
     const r = await fetch(`/api/queue?venueId=${VENUE_ID}`);
     const data = await r.json();
-    renderQueue(data.queue || []);
+    renderQueue(data.upcoming && data.upcoming.length ? data.upcoming : (data.queue || []));
     updateBadge((data.queue || []).length);
   } catch(e) {}
 }
@@ -1118,14 +1135,17 @@ function renderQueue(queue) {
     el.innerHTML = `<div style="text-align:center;padding:32px 0;color:var(--muted);font-size:13px;font-weight:300">${t('emptyQueue').replace('\n','<br>')}</div>`;
     return;
   }
-  el.innerHTML = queue.map((s, i) => `
-    <div class="queue-item">
+  // Label each song when the bar's own queued songs are mixed in, so guests see why theirs is further down
+  const mixed = queue.some(s => s.source === 'bar');
+  el.innerHTML = (mixed ? `<p class="queue-note">${t('queueBarNote')}</p>` : '') + queue.map((s, i) => `
+    <div class="queue-item${s.source === 'bar' ? ' from-bar' : ''}">
       <div class="queue-num">${i + 1}</div>
       <img class="queue-img" src="${s.image || ''}" onerror="this.style.background='#3D3284'" alt="">
       <div class="queue-info">
         <div class="name">${s.name}</div>
         <div class="artist">${s.artist}</div>
       </div>
+      ${mixed ? `<span class="queue-src ${s.source === 'bar' ? 'bar' : 'zoros'}">${s.source === 'bar' ? t('srcBar') : t('srcZoros')}</span>` : ''}
     </div>
   `).join('');
 }
