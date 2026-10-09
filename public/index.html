@@ -170,7 +170,11 @@
   .track-card:hover { border-color: var(--orange); }
   .track-img { width: 52px; height: 52px; border-radius: 6px; object-fit: cover; flex-shrink: 0; background: var(--border); }
   .track-info { flex: 1; min-width: 0; }
-  .genre-note { font-size: 12px; color: var(--muted); margin: -4px 0 10px; line-height: 1.4; }
+  .genre-banner { display: flex; gap: 12px; align-items: flex-start; background: rgba(255,85,0,0.14); border: 1px solid var(--orange); border-radius: 12px; padding: 14px 16px; margin: 0 0 14px; }
+  .genre-banner .gb-icon { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--orange); color: var(--white); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; line-height: 1; }
+  .genre-banner .gb-title { font-size: 14px; font-weight: 700; color: var(--white); margin-bottom: 3px; }
+  .genre-banner .gb-text { font-size: 13px; color: var(--white); opacity: 0.9; line-height: 1.45; }
+  .genre-banner.big { margin-top: 24px; padding: 18px; }
   .track-name { font-size: 14px; font-weight: 500; color: var(--white); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .track-artist { font-size: 12px; color: var(--muted); font-weight: 300; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .track-price { font-size: 13px; font-weight: 600; color: var(--white); flex-shrink: 0; background: var(--orange); padding: 6px 10px; border-radius: 6px; }
@@ -468,7 +472,8 @@ const T = {
     noResults: 'No results found.\nTry a different search.',
     songBlocked: "This bar restricts certain genres, so that song isn't available here.",
     genreAllBlocked: "This bar restricts certain genres, so these songs aren't available here.\nTry a different artist or song.",
-    genreSomeBlocked: 'Some songs are hidden because this bar restricts certain genres.',
+    genreTitle: 'Some genres are restricted at this bar',
+    genreSomeBlocked: 'Songs from those genres are hidden from these results.',
     notPlaying: "Zoros isn't playing music right now. Ask your bartender to activate Zoros, then try again. You haven't been charged.",
     cancel: 'Cancel',
     useCredit: 'USE 1 CREDIT — PLAY THIS SONG',
@@ -516,7 +521,8 @@ const T = {
     noResults: 'Sin resultados.\nIntenta otra búsqueda.',
     songBlocked: 'Este bar restringe ciertos géneros, así que esa canción no está disponible aquí.',
     genreAllBlocked: 'Este bar restringe ciertos géneros, así que estas canciones no están disponibles aquí.\nPrueba con otro artista o canción.',
-    genreSomeBlocked: 'Algunas canciones están ocultas porque este bar restringe ciertos géneros.',
+    genreTitle: 'Algunos géneros están restringidos en este bar',
+    genreSomeBlocked: 'Las canciones de esos géneros no aparecen en estos resultados.',
     notPlaying: 'Zoros no está reproduciendo música ahora mismo. Pídele al camarero que active Zoros e inténtalo de nuevo. No se te ha cobrado nada.',
     cancel: 'Cancelar',
     useCredit: 'USAR 1 CRÉDITO — PONER ESTA CANCIÓN',
@@ -564,7 +570,8 @@ const T = {
     noResults: 'Geen resultaten gevonden.\nProbeer een andere zoekopdracht.',
     songBlocked: 'Deze bar beperkt bepaalde genres, dus dat nummer is hier niet beschikbaar.',
     genreAllBlocked: 'Deze bar beperkt bepaalde genres, dus deze nummers zijn hier niet beschikbaar.\nProbeer een andere artiest of een ander nummer.',
-    genreSomeBlocked: 'Sommige nummers zijn verborgen omdat deze bar bepaalde genres beperkt.',
+    genreTitle: 'Sommige genres zijn beperkt in deze bar',
+    genreSomeBlocked: 'Nummers uit die genres worden niet getoond in deze resultaten.',
     notPlaying: 'Zoros speelt nu geen muziek. Vraag de barman om Zoros te activeren en probeer het opnieuw. Er is niets afgeschreven.',
     cancel: 'Annuleren',
     useCredit: 'GEBRUIK 1 TEGOED — SPEEL DIT NUMMER',
@@ -612,7 +619,8 @@ const T = {
     noResults: 'Aucun résultat.\nEssaie une autre recherche.',
     songBlocked: "Ce bar limite certains genres, ce morceau n'est donc pas disponible ici.",
     genreAllBlocked: "Ce bar limite certains genres, ces morceaux ne sont donc pas disponibles ici.\nEssaie un autre artiste ou un autre morceau.",
-    genreSomeBlocked: 'Certains morceaux sont masqués car ce bar limite certains genres.',
+    genreTitle: 'Certains genres sont limités dans ce bar',
+    genreSomeBlocked: 'Les morceaux de ces genres sont masqués dans ces résultats.',
     notPlaying: "Zoros ne joue pas de musique pour le moment. Demande au barman d'activer Zoros, puis réessaie. Tu n'as pas été débité.",
     cancel: 'Annuler',
     useCredit: 'UTILISER 1 CRÉDIT — JOUER CE MORCEAU',
@@ -927,15 +935,22 @@ async function search(q) {
   } catch(e) { showError(); }
 }
 
+// Orange banner telling guests the bar's genre filter is hiding songs
+function genreBanner(text, big) {
+  return `<div class="genre-banner${big ? ' big' : ''}"><div class="gb-icon">!</div><div>`
+    + `<div class="gb-title">${t('genreTitle')}</div><div class="gb-text">${text.replace('\n','<br>')}</div></div></div>`;
+}
+
 function renderTracks(tracks, hidden = 0) {
   const el = document.getElementById('results');
   if (!tracks.length) {
     // Every result was filtered out by the bar's genre settings: say so instead of "no results"
-    const msg = hidden > 0 ? t('genreAllBlocked') : t('noResults');
-    el.innerHTML = `<div class="empty"><div class="icon">${hidden > 0 ? '🎚️' : '🔍'}</div><p>${msg.replace('\n','<br>')}</p></div>`;
+    el.innerHTML = hidden > 0
+      ? genreBanner(t('genreAllBlocked'), true)
+      : `<div class="empty"><div class="icon">🔍</div><p>${t('noResults').replace('\n','<br>')}</p></div>`;
     return;
   }
-  const genreNote = hidden > 0 ? `<p class="genre-note">${t('genreSomeBlocked')}</p>` : '';
+  const genreNote = hidden > 0 ? genreBanner(t('genreSomeBlocked'), false) : '';
   const priceLabel = currentUser && currentUser.credits > 0 ? t('oneCreditLabel') : '€0.99';
   el.innerHTML = `<p class="section-label">${t('resultsLabel')}</p>` + genreNote + tracks.map(tr => `
     <div class="track-card" onclick='selectTrack(${JSON.stringify(tr).replace(/'/g, "&#39;")})'>
