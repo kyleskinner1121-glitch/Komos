@@ -479,6 +479,8 @@ const T = {
     resultsLabel: 'Results',
     noResults: 'No results found.\nTry a different search.',
     songBlocked: "This bar's music settings don't allow this song, so it isn't available here.",
+    songUnavailable: "This song can't be played here. Please pick another one.",
+    notConnected: "This bar's music isn't connected to Zoros right now.\nAsk your bartender to reconnect Spotify.",
     genreAllBlocked: "This bar has chosen not to allow {r}, so these songs aren't available here.\nTry a different artist or song.",
     reasonGenre: 'certain genres',
     reasonExplicit: 'explicit songs',
@@ -534,6 +536,8 @@ const T = {
     resultsLabel: 'Resultados',
     noResults: 'Sin resultados.\nIntenta otra búsqueda.',
     songBlocked: 'Los ajustes de música de este bar no permiten esta canción, así que no está disponible aquí.',
+    songUnavailable: 'Esta canción no se puede reproducir aquí. Elige otra, por favor.',
+    notConnected: 'La música de este bar no está conectada a Zoros ahora mismo.\nPídele al camarero que vuelva a conectar Spotify.',
     genreAllBlocked: 'Este bar ha decidido no permitir {r}, así que estas canciones no están disponibles aquí.\nPrueba con otro artista o canción.',
     reasonGenre: 'ciertos géneros',
     reasonExplicit: 'canciones explícitas',
@@ -589,6 +593,8 @@ const T = {
     resultsLabel: 'Resultaten',
     noResults: 'Geen resultaten gevonden.\nProbeer een andere zoekopdracht.',
     songBlocked: 'De muziekinstellingen van deze bar staan dit nummer niet toe, dus het is hier niet beschikbaar.',
+    songUnavailable: 'Dit nummer kan hier niet worden afgespeeld. Kies een ander nummer.',
+    notConnected: 'De muziek van deze bar is nu niet verbonden met Zoros.\nVraag de barman om Spotify opnieuw te verbinden.',
     genreAllBlocked: 'Deze bar heeft ervoor gekozen {r} niet toe te staan, dus deze nummers zijn hier niet beschikbaar.\nProbeer een andere artiest of een ander nummer.',
     reasonGenre: 'bepaalde genres',
     reasonExplicit: 'expliciete nummers',
@@ -644,6 +650,8 @@ const T = {
     resultsLabel: 'Résultats',
     noResults: 'Aucun résultat.\nEssaie une autre recherche.',
     songBlocked: "Les réglages musicaux de ce bar n'autorisent pas ce morceau, il n'est donc pas disponible ici.",
+    songUnavailable: "Ce morceau ne peut pas être joué ici. Choisis-en un autre, s'il te plaît.",
+    notConnected: "La musique de ce bar n'est pas connectée à Zoros pour le moment.\nDemande au barman de reconnecter Spotify.",
     genreAllBlocked: "Ce bar a choisi de ne pas autoriser {r}, ces morceaux ne sont donc pas disponibles ici.\nEssaie un autre artiste ou un autre morceau.",
     reasonGenre: 'certains genres',
     reasonExplicit: 'les morceaux explicites',
@@ -974,6 +982,7 @@ async function search(q) {
   try {
     const r = await fetch(`/api/search?q=${encodeURIComponent(q)}&venueId=${encodeURIComponent(VENUE_ID)}`);
     const data = await r.json();
+    if (data.notConnected) { showNotConnected(); return; }
     renderTracks(data.tracks || [], data.hidden || 0, data.hiddenExplicit || 0);
   } catch(e) { showError(); }
 }
@@ -1000,10 +1009,10 @@ function renderTracks(tracks, hidden = 0, hiddenExplicit = 0) {
   const priceLabel = currentUser && currentUser.credits > 0 ? t('oneCreditLabel') : '€0.99';
   el.innerHTML = `<p class="section-label">${t('resultsLabel')}</p>` + genreNote + tracks.map(tr => `
     <div class="track-card" onclick='selectTrack(${JSON.stringify(tr).replace(/'/g, "&#39;")})'>
-      <img class="track-img" src="${tr.image || ''}" onerror="this.style.background='#3D3284'" alt="">
+      <img class="track-img" src="${esc(tr.image || '')}" onerror="this.style.background='#3D3284'" alt="">
       <div class="track-info">
-        <div class="track-name">${tr.name}</div>
-        <div class="track-artist">${tr.artist}</div>
+        <div class="track-name">${esc(tr.name)}</div>
+        <div class="track-artist">${esc(tr.artist)}</div>
       </div>
       <div class="track-price">${priceLabel}</div>
     </div>
@@ -1078,7 +1087,7 @@ async function useCredit() {
       loadQueue();
     } else {
       if (data.off) { setOffScreen(true); return; }
-      showToast(data.notPlaying ? t('notPlaying') : data.blocked ? t('songBlocked') : (data.error || 'Failed to use credit'));
+      showToast(data.notPlaying ? t('notPlaying') : data.blocked ? t('songBlocked') : data.unavailable ? t('songUnavailable') : (data.error || 'Failed to use credit'));
       btn.textContent = t('useCredit');
       btn.style.pointerEvents = 'auto';
     }
@@ -1113,7 +1122,7 @@ async function confirmPay() {
     const data = await r.json();
     if (data.url) { window.location.href = data.url; return; }
     if (data.off) { setOffScreen(true); btn.textContent = t('pay'); btn.style.pointerEvents = 'auto'; return; }
-    showToast(data.notPlaying ? t('notPlaying') : data.blocked ? t('songBlocked') : 'Payment failed. Try again.');
+    showToast(data.notPlaying ? t('notPlaying') : data.blocked ? t('songBlocked') : data.unavailable ? t('songUnavailable') : 'Payment failed. Try again.');
     btn.textContent = t('pay');
     btn.style.pointerEvents = 'auto';
   } catch(e) {
@@ -1143,6 +1152,11 @@ async function loadQueue() {
   } catch(e) {}
 }
 
+// Song names and covers are shown as text, never as HTML
+function esc(str) {
+  return String(str == null ? '' : str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
 function renderQueue(queue) {
   const el = document.getElementById('queueList');
   if (!queue.length) {
@@ -1154,10 +1168,10 @@ function renderQueue(queue) {
   el.innerHTML = (mixed ? `<p class="queue-note">${t('queueBarNote')}</p>` : '') + queue.map((s, i) => `
     <div class="queue-item${s.source === 'bar' ? ' from-bar' : ''}">
       <div class="queue-num">${i + 1}</div>
-      <img class="queue-img" src="${s.image || ''}" onerror="this.style.background='#3D3284'" alt="">
+      <img class="queue-img" src="${esc(s.image || '')}" onerror="this.style.background='#3D3284'" alt="">
       <div class="queue-info">
-        <div class="name">${s.name}</div>
-        <div class="artist">${s.artist}</div>
+        <div class="name">${esc(s.name)}</div>
+        <div class="artist">${esc(s.artist)}</div>
       </div>
       ${mixed ? `<span class="queue-src ${s.source === 'bar' ? 'bar' : 'zoros'}">${s.source === 'bar' ? t('srcBar') : t('srcZoros')}</span>` : ''}
     </div>
@@ -1172,6 +1186,7 @@ function updateBadge(count) {
 
 function showLoading() { document.getElementById('results').innerHTML = `<div class="loading"><div class="spinner"></div>${t('loading')}</div>`; }
 function showEmpty() { document.getElementById('results').innerHTML = `<div class="empty"><div class="icon">🎵</div><p>${t('emptySearch').replace('\n','<br>')}</p></div>`; }
+function showNotConnected() { document.getElementById('results').innerHTML = `<div class="empty"><div class="icon">🔌</div><p>${t('notConnected').replace('\n','<br>')}</p></div>`; }
 function showError() { document.getElementById('results').innerHTML = `<div class="empty"><div class="icon">⚠️</div><p>${t('error').replace('\n','<br>')}</p></div>`; }
 // Longer messages stay up longer so there's time to read them
 let toastTimer;

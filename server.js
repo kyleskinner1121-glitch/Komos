@@ -1035,7 +1035,7 @@ app.post('/api/bundle/confirm', async (req, res) => {
 // ── USE CREDIT TO QUEUE SONG ──
 app.post('/api/queue/use-credit', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
-  const { track_id, track_name, artist, image, uri, venue_id = 'default' } = req.body;
+  const { venue_id = 'default' } = req.body;
   try {
     if (!(await venueIsActive(venue_id))) {
       return res.status(400).json({ error: 'off', off: true });
@@ -1043,9 +1043,14 @@ app.post('/api/queue/use-credit', async (req, res) => {
     if (!(await spotifyIsPlaying(venue_id))) {
       return res.status(400).json({ error: 'notplaying', notPlaying: true });
     }
-    if (!(await uriAllowedForVenue(venue_id, uri))) {
+    const track = await lookupTrack(venue_id, {
+      id: req.body.track_id, uri: req.body.uri, name: req.body.track_name, artist: req.body.artist, image: req.body.image
+    });
+    if (!track) return res.status(400).json({ error: 'unavailable', unavailable: true });
+    if (!(await trackAllowedForVenue(venue_id, track))) {
       return res.status(400).json({ error: 'blocked', blocked: true });
     }
+    const { id: track_id, name: track_name, artist, image, uri } = track;
     const user = await pool.query('SELECT credits FROM users WHERE id = $1', [req.session.userId]);
     if (!user.rows.length || user.rows[0].credits < 1) {
       return res.status(400).json({ error: 'No credits remaining' });
@@ -1069,26 +1074,6 @@ app.post('/api/queue/use-credit', async (req, res) => {
   }
 });
 
-let spotifyToken = null;
-let tokenExpiry = 0;
-
-async function getSpotifyToken() {
-  if (spotifyToken && Date.now() < tokenExpiry) return spotifyToken;
-  const clientId = process.env.SPOTIFY_CLIENT_ID;
-  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return null;
-  const creds = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const res = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST',
-    headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'grant_type=client_credentials'
-  });
-  const data = await res.json();
-  if (!data.access_token) return null;
-  spotifyToken = data.access_token;
-  tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
-  return spotifyToken;
-}
 
 // ── BAR MUSIC SETTINGS (explicit + genre filters) ──
 // Spotify gives genres per artist, not per song, so a song is judged by its main artist.
@@ -1134,10 +1119,10 @@ const normGenre = g => String(g).toLowerCase().replace(/[-_]+/g, ' ').trim();
 
 // Spotify's own artist genres. Spotify has been returning empty or vague genres for
 // many artists, so this alone lets songs slip past the filter.
-async function spotifyArtistGenres(artistId) {
+async function spotifyArtistGenres(artistId, token) {
   if (!artistId) return { genres: [], ok: true };
+  if (!token) return { genres: [], ok: false };
   try {
-    const token = await getSpotifyToken();
     const r = await fetch(`https://api.spotify.com/v1/artists/${artistId}`, { headers: { Authorization: `Bearer ${token}` } });
     if (!r.ok) return { genres: [], ok: false };
     const data = await r.json();
@@ -1172,21 +1157,22 @@ async function lastfmArtistTags(artistName) {
 // Artist genres rarely change, so remember them for a day to keep API calls low.
 // A lookup that failed isn't remembered, so it's retried on the next search.
 const artistGenreCache = new Map();
-async function getArtistGenres(artistId, artistName) {
+async function getArtistGenres(artistId, artistName, token) {
   const cacheKey = artistId || `name:${artistName || ''}`;
   const hit = artistGenreCache.get(cacheKey);
   if (hit && Date.now() - hit.at < 24 * 60 * 60 * 1000) return hit.genres;
-  const [sp, lf] = await Promise.all([spotifyArtistGenres(artistId), lastfmArtistTags(artistName)]);
+  const [sp, lf] = await Promise.all([spotifyArtistGenres(artistId, token), lastfmArtistTags(artistName)]);
   const genres = [...new Set([...sp.genres, ...lf.genres])];
   if (sp.ok && lf.ok) artistGenreCache.set(cacheKey, { genres, at: Date.now() });
   return genres;
 }
 
 // track needs { explicit, artistId, artistName }. Returns true if the bar's settings allow it.
-async function trackAllowed(track, settings) {
+// token: the bar's Spotify token, used to read the artist's genres
+async function trackAllowed(track, settings, token) {
   if (settings.blockExplicit && track.explicit) return false;
   if (!settings.blockedGenres.length) return true;
-  const genres = await getArtistGenres(track.artistId, track.artistName);
+  const genres = await getArtistGenres(track.artistId, track.artistName, token);
   return !settings.blockedGenres.some(id =>
     GENRE_KEYWORDS[id].some(word => genres.some(g => g.includes(word)))
   );
@@ -1194,24 +1180,54 @@ async function trackAllowed(track, settings) {
 
 // Server-side check before taking money or using a credit, so filtered songs
 // can't be queued by bypassing the search screen.
-async function uriAllowedForVenue(venueId, uri) {
-  const settings = await getVenueSettings(venueId);
-  if (!settings.blockExplicit && !settings.blockedGenres.length) return true;
-  const trackId = String(uri || '').split(':').pop();
-  if (!trackId) return false;
+// The song as Spotify itself describes it, looked up by ID. A guest's phone only says which song
+// was picked; the name, artist, cover and URI stored and shown to other guests come from Spotify,
+// never from the phone. Asked through the bar's own Spotify account (Zoros never uses a Spotify
+// account of its own), so it reflects what can play in the bar's country. Returns null if no such song exists or it can't play there. If Spotify
+// doesn't answer, falls back to the phone's details, cleaned, so a hiccup doesn't block a sale.
+const SPOTIFY_ID = /^[A-Za-z0-9]{22}$/;
+async function lookupTrack(venueId, picked) {
+  const id = String(picked.id || String(picked.uri || '').split(':').pop() || '');
+  if (!SPOTIFY_ID.test(id)) return null;
+  const fallback = {
+    id, uri: `spotify:track:${id}`, checked: false,
+    name: String(picked.name || '').slice(0, 300),
+    artist: String(picked.artist || '').slice(0, 300),
+    image: /^https:\/\/i\.scdn\.co\/image\/[A-Za-z0-9]+$/.test(picked.image || '') ? picked.image : ''
+  };
   try {
-    const token = await getSpotifyToken();
-    const r = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, { headers: { Authorization: `Bearer ${token}` } });
-    if (!r.ok) return true; // don't block a sale because Spotify hiccuped
+    const token = await getVenueToken(venueId);
+    if (!token) return fallback; // payments already require the bar's Spotify, so this is rare
+    const r = await fetch(`https://api.spotify.com/v1/tracks/${id}?market=from_token`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (r.status === 401) { await spotifyTokenRejected(venueId); return fallback; }
+    if (r.status === 400 || r.status === 404) return null;
+    if (!r.ok) return fallback;
     const t = await r.json();
-    return trackAllowed({
-      explicit: t.explicit,
+    if (t.is_playable === false) return null;
+    const images = (t.album && t.album.images) || [];
+    return {
+      id, checked: true,
+      uri: t.uri, // with the bar's market, the version that plays there, so what Spotify plays matches it
+      name: t.name,
+      artist: (t.artists || []).map(a => a.name).join(', '),
+      image: (images[1] || images[0] || {}).url || '',
+      explicit: !!t.explicit,
       artistId: t.artists && t.artists[0] && t.artists[0].id,
       artistName: t.artists && t.artists[0] && t.artists[0].name
-    }, settings);
+    };
   } catch (e) {
-    return true;
+    return fallback;
   }
+}
+
+// Does the bar's explicit/genre setting allow this song? Unchecked songs (Spotify didn't answer) pass.
+async function trackAllowedForVenue(venueId, track) {
+  const settings = await getVenueSettings(venueId);
+  if (!settings.blockExplicit && !settings.blockedGenres.length) return true;
+  if (!track.checked) return true;
+  return trackAllowed(track, settings, await getVenueToken(venueId));
 }
 
 async function saveVenueToken(venueId, accessToken, refreshToken, expiresIn) {
@@ -1233,6 +1249,12 @@ function getVenueToken(venueId) {
   return p;
 }
 
+// Spotify refused the bar's access token before it was due to expire: drop it, so the next call
+// refreshes it, or reports the connection as broken if the refresh is refused too.
+async function spotifyTokenRejected(venueId) {
+  await pool.query('UPDATE venue_tokens SET expires_at = 0 WHERE venue_id = $1', [venueId]).catch(() => {});
+}
+
 async function loadVenueToken(venueId) {
   try {
     const result = await pool.query('SELECT * FROM venue_tokens WHERE venue_id = $1', [venueId]);
@@ -1247,7 +1269,17 @@ async function loadVenueToken(venueId) {
       body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: tokenData.refresh_token })
     });
     const data = await r.json();
-    if (!data.access_token) return null;
+    if (!data.access_token) {
+      // invalid_grant = the bar revoked Zoros or the connection is otherwise dead: forget it, so the
+      // dashboard shows "Reconnect Spotify" instead of retrying forever. Other errors may pass.
+      if (data.error === 'invalid_grant') {
+        await pool.query('UPDATE venue_tokens SET refresh_token = NULL WHERE venue_id = $1', [venueId]);
+        console.log(`[spotify] ${venueId}: Spotify connection no longer valid (${data.error_description || data.error}); the bar must reconnect`);
+      } else {
+        console.log(`[spotify] ${venueId}: token refresh failed (${r.status} ${data.error || ''}); will retry`);
+      }
+      return null;
+    }
     // Spotify sometimes sends a new refresh token; the old one may then stop working
     await saveVenueToken(venueId, data.access_token, data.refresh_token || tokenData.refresh_token, data.expires_in);
     return data.access_token;
@@ -1735,6 +1767,11 @@ app.get('/api/venue/status', async (req, res) => {
       const data = await r.json();
       return res.json({ connected: true, device: data.device?.name, playing: data.is_playing });
     }
+    if (r.status === 401) {
+      // Token refused: try a fresh one once; if that fails too, the bar has to reconnect
+      await spotifyTokenRejected(venueId);
+      if (!(await getVenueToken(venueId))) return res.json({ connected: false });
+    }
     return res.json({ connected: true, device: null, playing: false });
   } catch (e) {
     return res.json({ connected: true, device: null });
@@ -1790,8 +1827,10 @@ app.get('/api/search', async (req, res) => {
   try {
     const { q, venueId } = req.query;
     if (!q) return res.json({ tracks: [] });
-    const token = await getSpotifyToken();
-    if (!token) return res.json({ tracks: [], error: 'No Spotify token' });
+    // Search through the bar's own Spotify account only (Zoros never uses one of its own); if the
+    // bar's Spotify isn't connected, guests are told and the bartender's dashboard says to reconnect
+    const token = venueId ? await getVenueToken(venueId) : null;
+    if (!token) return res.json({ tracks: [], notConnected: true });
     const settings = venueId ? await getVenueSettings(venueId) : cleanSettings({});
     const filtering = settings.blockExplicit || settings.blockedGenres.length > 0;
 
@@ -1799,15 +1838,16 @@ app.get('/api/search', async (req, res) => {
     // grab a second page so patrons still see a decent list.
     const fetchPage = async (offset) => {
       const r = await fetch(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${offset}&market=DE`,
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${offset}&market=from_token`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      if (r.status === 401) await spotifyTokenRejected(venueId);
       const data = await r.json();
       return (data.tracks && data.tracks.items) || null;
     };
     const pages = await Promise.all(filtering ? [fetchPage(0), fetchPage(10)] : [fetchPage(0)]);
     if (!pages[0]) return res.json({ tracks: [], error: 'Spotify API error' });
-    const items = pages.flat().filter(Boolean);
+    const items = pages.flat().filter(t => t && t.is_playable !== false); // unplayable in the bar's country
 
     let tracks = items.map(t => ({
       id: t.id,
@@ -1825,7 +1865,7 @@ app.get('/api/search', async (req, res) => {
 
     let hidden = 0, hiddenExplicit = 0;
     if (filtering) {
-      const allowed = await Promise.all(tracks.map(t => trackAllowed(t, settings)));
+      const allowed = await Promise.all(tracks.map(t => trackAllowed(t, settings, token)));
       // Only tell guests about hidden songs that are what they searched for. Searching "the beatles"
       // can pull in a house remix by someone else; hiding that shouldn't show the bar's-settings message.
       let removed = tracks.filter((t, i) => !allowed[i]);
@@ -1915,7 +1955,7 @@ function stripeLocale(lang) {
 
 app.post('/api/create-payment', async (req, res) => {
   try {
-    const { trackId, trackName, artist, image, uri, venueId = 'default', src, lang } = req.body;
+    const { venueId = 'default', src, lang } = req.body;
     const price = SONG_PRICE; // set server-side so a patron can't edit the request to pay less
     if (!(await venueIsActive(venueId))) {
       return res.status(400).json({ error: 'off', off: true });
@@ -1923,9 +1963,14 @@ app.post('/api/create-payment', async (req, res) => {
     if (!(await spotifyIsPlaying(venueId))) {
       return res.status(400).json({ error: 'notplaying', notPlaying: true });
     }
-    if (!(await uriAllowedForVenue(venueId, uri))) {
+    const track = await lookupTrack(venueId, {
+      id: req.body.trackId, uri: req.body.uri, name: req.body.trackName, artist: req.body.artist, image: req.body.image
+    });
+    if (!track) return res.status(400).json({ error: 'unavailable', unavailable: true });
+    if (!(await trackAllowedForVenue(venueId, track))) {
       return res.status(400).json({ error: 'blocked', blocked: true });
     }
+    const { id: trackId, name: trackName, artist, image, uri } = track;
     const session = await createCheckout({
       locale: stripeLocale(lang),
       payment_method_types: ['card'],
@@ -1970,14 +2015,15 @@ app.post('/api/queue/add', async (req, res) => {
     }
     // Song details come from the Stripe session (set when payment was created), not the URL,
     // so a paid session can't be swapped for a different song or venue.
+    // Nothing is taken from the request body: the session holds the details looked up on Spotify.
     const m = stripeSession.metadata || {};
-    const b = req.body;
-    const track_id = m.trackId || b.track_id;
-    const track_name = m.trackName || b.track_name;
-    const artist = m.artist || b.artist;
-    const image = m.image || b.image;
-    const uri = m.uri || b.uri;
-    const venue_id = m.venueId || b.venue_id || 'default';
+    if (!m.uri) return res.status(400).json({ error: 'This payment has no song attached' });
+    const track_id = m.trackId;
+    const track_name = m.trackName;
+    const artist = m.artist;
+    const image = m.image;
+    const uri = m.uri;
+    const venue_id = m.venueId || 'default';
 
     const countQueued = async () => parseInt((await pool.query(
       "SELECT COUNT(*) FROM songs WHERE venue_id = $1 AND status = 'queued'", [venue_id]

@@ -1242,7 +1242,7 @@
       queueEl.innerHTML = data.queue.map((s, i) => `
         <div class="song-row">
           <div class="song-num">${i + 1}</div>
-          ${s.image ? `<img class="song-art" src="${s.image}" alt="">` : `<div class="song-art-placeholder">🎵</div>`}
+          ${s.image ? `<img class="song-art" src="${esc(s.image)}" alt="">` : `<div class="song-art-placeholder">🎵</div>`}
           <div class="song-info">
             <div class="song-name">${esc(s.name)}</div>
             <div class="song-artist">${esc(s.artist)}</div>
@@ -1258,7 +1258,7 @@
     } else {
       histEl.innerHTML = data.played.map(s => `
         <div class="history-row">
-          ${s.image ? `<img class="history-art" src="${s.image}" alt="">` : `<div class="history-art-placeholder">🎵</div>`}
+          ${s.image ? `<img class="history-art" src="${esc(s.image)}" alt="">` : `<div class="history-art-placeholder">🎵</div>`}
           <div class="history-info">
             <div class="history-name">${esc(s.name)}</div>
             <div class="history-artist">${esc(s.artist)}</div>
@@ -1302,7 +1302,7 @@
 
     if (data.playing) {
       if (data.image) {
-        artWrap.outerHTML = `<img class="np-art" id="np-art-wrap" src="${data.image}" alt="">`;
+        artWrap.outerHTML = `<img class="np-art" id="np-art-wrap" src="${esc(data.image)}" alt="">`;
       }
       npText.className = 'np-name';
       npText.innerHTML = `${esc(data.name)}<br><span style="font-size:13px;font-weight:400;color:var(--text-muted)">${esc(data.artist)}</span>`;
@@ -1368,7 +1368,7 @@
       topEl.innerHTML = data.topSongs.map((s, i) => `
         <div class="top-song-row">
           <div class="top-song-rank">${i + 1}</div>
-          ${s.image ? `<img class="top-song-art" src="${s.image}" alt="">` : `<div class="top-song-art-placeholder">🎵</div>`}
+          ${s.image ? `<img class="top-song-art" src="${esc(s.image)}" alt="">` : `<div class="top-song-art-placeholder">🎵</div>`}
           <div class="top-song-info">
             <div class="top-song-name">${esc(s.name)}</div>
             <div class="top-song-artist">${esc(s.artist)}</div>
@@ -1404,7 +1404,7 @@
   }
 
   function esc(str) {
-    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
 
   function timeAgo(ts) {
