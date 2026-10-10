@@ -200,6 +200,8 @@ async function initDB() {
     // the real play order (older rows sent before this column existed fall back to added_at).
     await pool.query(`ALTER TABLE songs ADD COLUMN IF NOT EXISTS sent_at TIMESTAMP`);
     await pool.query(`UPDATE songs SET sent_at = added_at WHERE added_to_spotify AND sent_at IS NULL`);
+    // How many times Spotify has refused a request, so one bad song can't hold up the rest
+    await pool.query(`ALTER TABLE songs ADD COLUMN IF NOT EXISTS send_attempts INTEGER DEFAULT 0`);
     await pool.query(`ALTER TABLE processed_payments
       ADD COLUMN IF NOT EXISTS split_to VARCHAR(255),
       ADD COLUMN IF NOT EXISTS bar_amount INTEGER`);
@@ -1049,7 +1051,7 @@ app.post('/api/queue/use-credit', async (req, res) => {
       return res.status(400).json({ error: 'No credits remaining' });
     }
     await pool.query('UPDATE users SET credits = credits - 1 WHERE id = $1', [req.session.userId]);
-    const id = Date.now();
+    const id = newSongId();
     await pool.query(`
       INSERT INTO songs (id, track_id, name, artist, image, uri, venue_id, user_id, added_to_spotify, amount_paid)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE, $9)
@@ -1222,7 +1224,16 @@ async function saveVenueToken(venueId, accessToken, refreshToken, expiresIn) {
   `, [venueId, accessToken, refreshToken, expiresAt]);
 }
 
-async function getVenueToken(venueId) {
+// Several loops ask for a bar's token at once; when it has expired, refresh it only once
+const tokenRefreshes = new Map();
+function getVenueToken(venueId) {
+  if (tokenRefreshes.has(venueId)) return tokenRefreshes.get(venueId);
+  const p = loadVenueToken(venueId).finally(() => tokenRefreshes.delete(venueId));
+  tokenRefreshes.set(venueId, p);
+  return p;
+}
+
+async function loadVenueToken(venueId) {
   try {
     const result = await pool.query('SELECT * FROM venue_tokens WHERE venue_id = $1', [venueId]);
     if (!result.rows.length) return null;
@@ -1245,17 +1256,27 @@ async function getVenueToken(venueId) {
   }
 }
 
+// Song ids are a millisecond timestamp plus a random part, so two requests in the same
+// millisecond can't collide (still well inside the range JavaScript numbers hold exactly)
+function newSongId() {
+  return Date.now() * 1000 + Math.floor(Math.random() * 1000);
+}
+
+// { ok, status, reason } — status 0 means Spotify wasn't reached or the bar has no token
 async function addToSpotifyQueue(venueId, uri) {
   const token = await getVenueToken(venueId);
-  if (!token) return false;
+  if (!token) return { ok: false, status: 0, reason: 'no Spotify token' };
   try {
     const r = await fetch(`https://api.spotify.com/v1/me/player/queue?uri=${encodeURIComponent(uri)}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` }
     });
-    return r.ok; // Spotify returns 200 or 204 depending on API version
+    if (r.ok) return { ok: true, status: r.status }; // Spotify returns 200 or 204 depending on API version
+    let reason = '';
+    try { const body = await r.json(); reason = (body.error && body.error.message) || ''; } catch (e) {}
+    return { ok: false, status: r.status, reason };
   } catch (e) {
-    return false;
+    return { ok: false, status: 0, reason: e.message };
   }
 }
 
@@ -1337,10 +1358,38 @@ async function sendPendingNow(venueId) {
     [venueId]
   );
   for (const song of pending.rows) {
-    if (!(await addToSpotifyQueue(venueId, song.uri))) break; // keep order: stop at first failure
-    await pool.query('UPDATE songs SET added_to_spotify = TRUE, sent_at = clock_timestamp() WHERE id = $1', [song.id]);
-    console.log(`[spotify-send] Sent "${song.name}" to Spotify at ${venueId}`);
+    const sent = await addToSpotifyQueue(venueId, song.uri);
+    if (sent.ok) {
+      await pool.query('UPDATE songs SET added_to_spotify = TRUE, sent_at = clock_timestamp() WHERE id = $1', [song.id]);
+      console.log(`[spotify-send] Sent "${song.name}" to Spotify at ${venueId}`);
+      continue;
+    }
+    const attempts = (await pool.query(
+      'UPDATE songs SET send_attempts = COALESCE(send_attempts, 0) + 1 WHERE id = $1 RETURNING send_attempts', [song.id]
+    )).rows[0].send_attempts;
+    if (attempts === 1 || attempts % 30 === 0) {
+      console.log(`[spotify-send] Spotify refused "${song.name}" at ${venueId} (attempt ${attempts}): ${sent.status} ${sent.reason}`);
+    }
+    // Keep order while the problem is the whole player (no token, rate limit, nothing playing)
+    // or a song has only just failed. A song Spotify keeps refusing while music is playing is
+    // the song's own problem: let the requests behind it through, and keep retrying it.
+    if (sent.status === 0 || sent.status === 401 || sent.status === 429 || attempts < 3) break;
+    const token = await getVenueToken(venueId);
+    if (!token || !(await playingNow(token).catch(() => null))) break;
   }
+}
+
+// Requests Spotify never accepted within 3 hours leave the queue. The guest paid, so log it
+// clearly for a refund.
+async function giveUpOnOldUnsent() {
+  const r = await pool.query(
+    `UPDATE songs SET status = 'unsent'
+     WHERE status = 'queued' AND added_to_spotify IS NOT TRUE AND added_at < NOW() - INTERVAL '3 hours'
+     RETURNING id, name, venue_id, amount_paid, send_attempts`
+  );
+  r.rows.forEach(s => console.log(
+    `[spotify-send] NEVER PLAYED, consider a refund: "${s.name}" at ${s.venue_id} (song ${s.id}, ${s.amount_paid} cents, ${s.send_attempts || 0} attempts)`
+  ));
 }
 
 // Resolves to whether song `songId` (if given) is now on Spotify
@@ -1366,6 +1415,7 @@ async function retryPendingSpotify() {
          AND added_at > NOW() - INTERVAL '3 hours'`
     );
     for (const { venue_id } of venues.rows) await sendPendingToSpotify(venue_id);
+    await giveUpOnOldUnsent();
   } catch (e) {
     console.error('[spotify-retry] Error:', e.message);
   }
@@ -1938,7 +1988,7 @@ app.post('/api/queue/add', async (req, res) => {
       return res.json({ success: true, alreadyProcessed: true, position: await countQueued() });
     }
 
-    const id = Date.now();
+    const id = newSongId();
     await pool.query(`
       INSERT INTO songs (id, track_id, name, artist, image, uri, venue_id, added_to_spotify, amount_paid)
       VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8)
@@ -2030,6 +2080,35 @@ app.get('/api/queue', async (req, res) => {
       queue: queue.rows.map(s => ({ id: s.id, name: s.name, artist: s.artist, image: s.image, uri: s.uri, venueId: s.venue_id, addedAt: s.added_at })),
       played: played.rows.map(s => ({ id: s.id, name: s.name, artist: s.artist, image: s.image, uri: s.uri, venueId: s.venue_id, playedAt: s.played_at })),
       upcoming // null if Spotify couldn't be asked; the app then shows just the Zoros requests
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Team-only: what Zoros and the bar's Spotify each think is playing and queued, side by side
+app.get('/api/admin/queue-debug', async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Unauthorized' });
+  const venueId = req.query.venueId;
+  if (!venueId) return res.status(400).json({ error: 'venueId needed' });
+  try {
+    const rows = (await pool.query(
+      `SELECT id, name, artist, uri, status, added_to_spotify, send_attempts, added_at, sent_at, played_at FROM songs
+       WHERE venue_id = $1 AND (status <> 'played' OR played_at > NOW() - INTERVAL '3 hours')
+       ORDER BY added_at DESC LIMIT 40`, [venueId])).rows;
+    const skips = (await pool.query('SELECT name, uri, created_at FROM spotify_skips WHERE venue_id = $1', [venueId])).rows;
+    const token = await getVenueToken(venueId);
+    let playing = null, queue = null;
+    if (token) {
+      playing = await playingNow(token).catch(e => ({ error: e.message }));
+      queue = await spotifyQueueTracks(token).catch(e => ({ error: e.message }));
+    }
+    res.json({
+      spotifyConnected: !!token,
+      spotifyPlaying: playing,
+      spotifyQueue: queue,
+      zorosSongs: rows.map(s => ({ ...s, seenInSpotify: missingRounds.has(s.id) })),
+      removedWaitingToSkip: skips
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
