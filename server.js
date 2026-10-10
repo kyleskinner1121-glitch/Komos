@@ -1074,26 +1074,6 @@ app.post('/api/queue/use-credit', async (req, res) => {
   }
 });
 
-let spotifyToken = null;
-let tokenExpiry = 0;
-
-async function getSpotifyToken() {
-  if (spotifyToken && Date.now() < tokenExpiry) return spotifyToken;
-  const clientId = process.env.SPOTIFY_CLIENT_ID;
-  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return null;
-  const creds = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const res = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST',
-    headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'grant_type=client_credentials'
-  });
-  const data = await res.json();
-  if (!data.access_token) return null;
-  spotifyToken = data.access_token;
-  tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
-  return spotifyToken;
-}
 
 // ── BAR MUSIC SETTINGS (explicit + genre filters) ──
 // Spotify gives genres per artist, not per song, so a song is judged by its main artist.
@@ -1139,10 +1119,10 @@ const normGenre = g => String(g).toLowerCase().replace(/[-_]+/g, ' ').trim();
 
 // Spotify's own artist genres. Spotify has been returning empty or vague genres for
 // many artists, so this alone lets songs slip past the filter.
-async function spotifyArtistGenres(artistId) {
+async function spotifyArtistGenres(artistId, token) {
   if (!artistId) return { genres: [], ok: true };
+  if (!token) return { genres: [], ok: false };
   try {
-    const token = await getSpotifyToken();
     const r = await fetch(`https://api.spotify.com/v1/artists/${artistId}`, { headers: { Authorization: `Bearer ${token}` } });
     if (!r.ok) return { genres: [], ok: false };
     const data = await r.json();
@@ -1177,21 +1157,22 @@ async function lastfmArtistTags(artistName) {
 // Artist genres rarely change, so remember them for a day to keep API calls low.
 // A lookup that failed isn't remembered, so it's retried on the next search.
 const artistGenreCache = new Map();
-async function getArtistGenres(artistId, artistName) {
+async function getArtistGenres(artistId, artistName, token) {
   const cacheKey = artistId || `name:${artistName || ''}`;
   const hit = artistGenreCache.get(cacheKey);
   if (hit && Date.now() - hit.at < 24 * 60 * 60 * 1000) return hit.genres;
-  const [sp, lf] = await Promise.all([spotifyArtistGenres(artistId), lastfmArtistTags(artistName)]);
+  const [sp, lf] = await Promise.all([spotifyArtistGenres(artistId, token), lastfmArtistTags(artistName)]);
   const genres = [...new Set([...sp.genres, ...lf.genres])];
   if (sp.ok && lf.ok) artistGenreCache.set(cacheKey, { genres, at: Date.now() });
   return genres;
 }
 
 // track needs { explicit, artistId, artistName }. Returns true if the bar's settings allow it.
-async function trackAllowed(track, settings) {
+// token: the bar's Spotify token, used to read the artist's genres
+async function trackAllowed(track, settings, token) {
   if (settings.blockExplicit && track.explicit) return false;
   if (!settings.blockedGenres.length) return true;
-  const genres = await getArtistGenres(track.artistId, track.artistName);
+  const genres = await getArtistGenres(track.artistId, track.artistName, token);
   return !settings.blockedGenres.some(id =>
     GENRE_KEYWORDS[id].some(word => genres.some(g => g.includes(word)))
   );
@@ -1201,8 +1182,8 @@ async function trackAllowed(track, settings) {
 // can't be queued by bypassing the search screen.
 // The song as Spotify itself describes it, looked up by ID. A guest's phone only says which song
 // was picked; the name, artist, cover and URI stored and shown to other guests come from Spotify,
-// never from the phone. Asked through the bar's own Spotify account, so it reflects what can play
-// in the bar's country. Returns null if no such song exists or it can't play there. If Spotify
+// never from the phone. Asked through the bar's own Spotify account (Zoros never uses a Spotify
+// account of its own), so it reflects what can play in the bar's country. Returns null if no such song exists or it can't play there. If Spotify
 // doesn't answer, falls back to the phone's details, cleaned, so a hiccup doesn't block a sale.
 const SPOTIFY_ID = /^[A-Za-z0-9]{22}$/;
 async function lookupTrack(venueId, picked) {
@@ -1215,11 +1196,12 @@ async function lookupTrack(venueId, picked) {
     image: /^https:\/\/i\.scdn\.co\/image\/[A-Za-z0-9]+$/.test(picked.image || '') ? picked.image : ''
   };
   try {
-    const venueToken = await getVenueToken(venueId);
-    const token = venueToken || await getSpotifyToken();
-    const r = await fetch(`https://api.spotify.com/v1/tracks/${id}${venueToken ? '?market=from_token' : ''}`, {
+    const token = await getVenueToken(venueId);
+    if (!token) return fallback; // payments already require the bar's Spotify, so this is rare
+    const r = await fetch(`https://api.spotify.com/v1/tracks/${id}?market=from_token`, {
       headers: { Authorization: `Bearer ${token}` }
     });
+    if (r.status === 401) { await spotifyTokenRejected(venueId); return fallback; }
     if (r.status === 400 || r.status === 404) return null;
     if (!r.ok) return fallback;
     const t = await r.json();
@@ -1245,7 +1227,7 @@ async function trackAllowedForVenue(venueId, track) {
   const settings = await getVenueSettings(venueId);
   if (!settings.blockExplicit && !settings.blockedGenres.length) return true;
   if (!track.checked) return true;
-  return trackAllowed(track, settings);
+  return trackAllowed(track, settings, await getVenueToken(venueId));
 }
 
 async function saveVenueToken(venueId, accessToken, refreshToken, expiresIn) {
@@ -1267,6 +1249,12 @@ function getVenueToken(venueId) {
   return p;
 }
 
+// Spotify refused the bar's access token before it was due to expire: drop it, so the next call
+// refreshes it, or reports the connection as broken if the refresh is refused too.
+async function spotifyTokenRejected(venueId) {
+  await pool.query('UPDATE venue_tokens SET expires_at = 0 WHERE venue_id = $1', [venueId]).catch(() => {});
+}
+
 async function loadVenueToken(venueId) {
   try {
     const result = await pool.query('SELECT * FROM venue_tokens WHERE venue_id = $1', [venueId]);
@@ -1281,7 +1269,17 @@ async function loadVenueToken(venueId) {
       body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: tokenData.refresh_token })
     });
     const data = await r.json();
-    if (!data.access_token) return null;
+    if (!data.access_token) {
+      // invalid_grant = the bar revoked Zoros or the connection is otherwise dead: forget it, so the
+      // dashboard shows "Reconnect Spotify" instead of retrying forever. Other errors may pass.
+      if (data.error === 'invalid_grant') {
+        await pool.query('UPDATE venue_tokens SET refresh_token = NULL WHERE venue_id = $1', [venueId]);
+        console.log(`[spotify] ${venueId}: Spotify connection no longer valid (${data.error_description || data.error}); the bar must reconnect`);
+      } else {
+        console.log(`[spotify] ${venueId}: token refresh failed (${r.status} ${data.error || ''}); will retry`);
+      }
+      return null;
+    }
     // Spotify sometimes sends a new refresh token; the old one may then stop working
     await saveVenueToken(venueId, data.access_token, data.refresh_token || tokenData.refresh_token, data.expires_in);
     return data.access_token;
@@ -1769,6 +1767,11 @@ app.get('/api/venue/status', async (req, res) => {
       const data = await r.json();
       return res.json({ connected: true, device: data.device?.name, playing: data.is_playing });
     }
+    if (r.status === 401) {
+      // Token refused: try a fresh one once; if that fails too, the bar has to reconnect
+      await spotifyTokenRejected(venueId);
+      if (!(await getVenueToken(venueId))) return res.json({ connected: false });
+    }
     return res.json({ connected: true, device: null, playing: false });
   } catch (e) {
     return res.json({ connected: true, device: null });
@@ -1824,12 +1827,10 @@ app.get('/api/search', async (req, res) => {
   try {
     const { q, venueId } = req.query;
     if (!q) return res.json({ tracks: [] });
-    // Search through the bar's own Spotify account when it's connected, so results are the
-    // versions that can play in the bar's country (market=from_token). Otherwise Zoros's own token.
-    const venueToken = venueId ? await getVenueToken(venueId) : null;
-    const token = venueToken || await getSpotifyToken();
-    if (!token) return res.json({ tracks: [], error: 'No Spotify token' });
-    const market = venueToken ? 'from_token' : 'DE';
+    // Search through the bar's own Spotify account only (Zoros never uses one of its own); if the
+    // bar's Spotify isn't connected, guests are told and the bartender's dashboard says to reconnect
+    const token = venueId ? await getVenueToken(venueId) : null;
+    if (!token) return res.json({ tracks: [], notConnected: true });
     const settings = venueId ? await getVenueSettings(venueId) : cleanSettings({});
     const filtering = settings.blockExplicit || settings.blockedGenres.length > 0;
 
@@ -1837,9 +1838,10 @@ app.get('/api/search', async (req, res) => {
     // grab a second page so patrons still see a decent list.
     const fetchPage = async (offset) => {
       const r = await fetch(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${offset}&market=${market}`,
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${offset}&market=from_token`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      if (r.status === 401) await spotifyTokenRejected(venueId);
       const data = await r.json();
       return (data.tracks && data.tracks.items) || null;
     };
@@ -1863,7 +1865,7 @@ app.get('/api/search', async (req, res) => {
 
     let hidden = 0, hiddenExplicit = 0;
     if (filtering) {
-      const allowed = await Promise.all(tracks.map(t => trackAllowed(t, settings)));
+      const allowed = await Promise.all(tracks.map(t => trackAllowed(t, settings, token)));
       // Only tell guests about hidden songs that are what they searched for. Searching "the beatles"
       // can pull in a house remix by someone else; hiding that shouldn't show the bar's-settings message.
       let removed = tracks.filter((t, i) => !allowed[i]);
