@@ -57,6 +57,36 @@ async function spotifyFetch(url, opts = {}) {
   return r;
 }
 
+// ── WHICH COUNTRY'S SPOTIFY CATALOG ──
+// Songs are looked up in the bar's own country's catalog, so guests only see songs that can play there.
+// This used to be done with market=from_token (Spotify reads the country from the bar's account), but
+// Spotify now refuses that with "Insufficient client scope", so the country comes from the bar's city.
+// A bar whose city isn't listed uses DEFAULT_SPOTIFY_MARKET (Railway variable), or Spain.
+const CITY_MARKET = {
+  madrid: 'ES', barcelona: 'ES', valencia: 'ES', sevilla: 'ES', seville: 'ES', malaga: 'ES', bilbao: 'ES',
+  amsterdam: 'NL', rotterdam: 'NL', utrecht: 'NL', 'the hague': 'NL', 'den haag': 'NL', eindhoven: 'NL',
+  stuttgart: 'DE', berlin: 'DE', munich: 'DE', munchen: 'DE', hamburg: 'DE', cologne: 'DE', koln: 'DE', frankfurt: 'DE',
+  paris: 'FR', lyon: 'FR', marseille: 'FR', lisbon: 'PT', lisboa: 'PT', porto: 'PT', dublin: 'IE',
+  london: 'GB', brussels: 'BE', antwerp: 'BE', vienna: 'AT', wien: 'AT', zurich: 'CH', rome: 'IT', milan: 'IT',
+  copenhagen: 'DK', stockholm: 'SE', oslo: 'NO', prague: 'CZ', warsaw: 'PL', budapest: 'HU', athens: 'GR'
+};
+const marketCache = new Map(); // venueId -> { at, market }
+async function venueMarket(venueId) {
+  const fallback = /^[A-Z]{2}$/.test(process.env.DEFAULT_SPOTIFY_MARKET || '') ? process.env.DEFAULT_SPOTIFY_MARKET : 'ES';
+  const hit = marketCache.get(venueId);
+  if (hit && Date.now() - hit.at < 10 * 60 * 1000) return hit.market;
+  let market = fallback;
+  try {
+    const r = await pool.query('SELECT city FROM venues WHERE venue_id = $1', [venueId]);
+    const city = String((r.rows[0] && r.rows[0].city) || '').trim();
+    const key = city.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(',')[0].trim();
+    if (/^[A-Za-z]{2}$/.test(city)) market = city.toUpperCase(); // city field holding a country code
+    else if (CITY_MARKET[key]) market = CITY_MARKET[key];
+  } catch (e) {}
+  marketCache.set(venueId, { at: Date.now(), market });
+  return market;
+}
+
 // Short per-bar caches for what the bar dashboard polls. Each open dashboard tab asked Spotify
 // twice every 5 seconds; now all tabs for a bar share one answer.
 const statusCache = new Map();     // venueId -> { at, body }
@@ -1241,7 +1271,7 @@ async function lookupTrack(venueId, picked) {
   try {
     const token = await getVenueToken(venueId);
     if (!token) return fallback; // payments already require the bar's Spotify, so this is rare
-    const r = await spotifyFetch(`https://api.spotify.com/v1/tracks/${id}?market=from_token`, {
+    const r = await spotifyFetch(`https://api.spotify.com/v1/tracks/${id}?market=${await venueMarket(venueId)}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     if (r.status === 401) { await spotifyTokenRejected(venueId); return fallback; }
@@ -1375,8 +1405,9 @@ async function spotifyIsPlaying(venueId) {
 // What's on the bar's Spotify right now, with every URI it could go by. Asking with the bar's own
 // market makes Spotify say which song was requested when it plays its local version of it under a
 // different ID (track relinking), so a request still matches when it plays.
-async function playingNow(token) {
-  const r = await spotifyFetch('https://api.spotify.com/v1/me/player?market=from_token', {
+async function playingNow(token, venueId) {
+  const market = venueId ? `?market=${await venueMarket(venueId)}` : '';
+  const r = await spotifyFetch(`https://api.spotify.com/v1/me/player${market}`, {
     headers: { Authorization: `Bearer ${token}` }
   });
   if (r.status !== 200) return null; // 204 = no active device
@@ -1450,7 +1481,7 @@ async function sendPendingNow(venueId) {
     // the song's own problem: let the requests behind it through, and keep retrying it.
     if (sent.status === 0 || sent.status === 401 || sent.status === 429 || attempts < 3) break;
     const token = await getVenueToken(venueId);
-    if (!token || !(await playingNow(token).catch(() => null))) break;
+    if (!token || !(await playingNow(token, venueId).catch(() => null))) break;
   }
 }
 
@@ -1527,7 +1558,7 @@ async function autoClearPlayed() {
           if (names.length) console.log(`[auto-clear] ${why}: ${names.map(n => `"${n}"`).join(', ')} at ${venue_id}`);
         };
 
-        const now = await playingNow(token);
+        const now = await playingNow(token, venue_id);
         // No active device: Spotify can't say what's queued, so only the history check below runs
         const waiting = now ? await spotifyQueueTracks(token) : null;
 
@@ -1605,7 +1636,7 @@ async function skipRemovedSongs() {
       try {
         const token = await getVenueToken(venue_id);
         if (!token) continue;
-        const now = await playingNow(token);
+        const now = await playingNow(token, venue_id);
         if (!now) continue;
         const skip = await pool.query(
           'SELECT id, name FROM spotify_skips WHERE venue_id = $1 AND uri = ANY($2) ORDER BY created_at LIMIT 1',
@@ -1892,9 +1923,10 @@ app.get('/api/search', async (req, res) => {
 
     // Spotify caps search at 10 results per call. When the bar filters songs out,
     // grab a second page so patrons still see a decent list.
+    const market = await venueMarket(venueId);
     const fetchPage = async (offset) => {
       const r = await spotifyFetch(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${offset}&market=from_token`,
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${offset}&market=${market}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (r.status === 401) await spotifyTokenRejected(venueId);
@@ -2204,7 +2236,7 @@ app.get('/api/admin/queue-debug', async (req, res) => {
     const token = await getVenueToken(venueId);
     let playing = null, queue = null;
     if (token) {
-      playing = await playingNow(token).catch(e => ({ error: e.message }));
+      playing = await playingNow(token, venueId).catch(e => ({ error: e.message }));
       queue = await spotifyQueueTracks(token).catch(e => ({ error: e.message }));
     }
     res.json({
