@@ -1893,7 +1893,7 @@ app.get('/api/search', async (req, res) => {
     // Spotify caps search at 10 results per call. When the bar filters songs out,
     // grab a second page so patrons still see a decent list.
     const fetchPage = async (offset) => {
-      const r = await fetch(
+      const r = await spotifyFetch(
         `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${offset}&market=from_token`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
