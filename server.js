@@ -269,6 +269,7 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    await pool.query(`ALTER TABLE spotify_skips ADD COLUMN IF NOT EXISTS artist TEXT`);
     // When each song was handed to Spotify. Spotify plays its queue in that order, so this is
     // the real play order (older rows sent before this column existed fall back to added_at).
     await pool.query(`ALTER TABLE songs ADD COLUMN IF NOT EXISTS sent_at TIMESTAMP`);
@@ -1416,7 +1417,7 @@ async function playingNow(token, venueId) {
   if (!item || !item.uri) return null;
   const uris = [item.uri];
   if (item.linked_from && item.linked_from.uri) uris.push(item.linked_from.uri);
-  return { uris, name: item.name, artists: item.artists };
+  return { uris, name: item.name, artists: item.artists, isPlaying: !!data.is_playing };
 }
 
 // The songs waiting in the bar's Spotify queue (Spotify only shows roughly the next 20), or null
@@ -1531,8 +1532,18 @@ async function retryPendingSpotify() {
 // Every 10 seconds, mark requests played once Spotify plays them. Only songs already sent to
 // Spotify can play, and Spotify plays its queue in the order songs were sent.
 const missingRounds = new Map(); // request id -> checks in a row it was gone from Spotify after being seen there
+const neverSeen = new Map();     // request id -> checks in a row it was missing without ever being seen there
 async function autoClearPlayed() {
   if (missingRounds.size > 5000) missingRounds.clear(); // removed requests leave entries behind
+  if (neverSeen.size > 5000) neverSeen.clear();
+  // Last resort: a request handed to Spotify more than 4 hours ago has played or never will
+  try {
+    const stale = await pool.query(
+      `UPDATE songs SET status = 'played', played_at = NOW()
+       WHERE status = 'queued' AND added_to_spotify AND COALESCE(sent_at, added_at) < NOW() - INTERVAL '4 hours'
+       RETURNING name, venue_id`);
+    stale.rows.forEach(s => console.log(`[auto-clear] Expired after 4h: "${s.name}" at ${s.venue_id}`));
+  } catch (e) {}
   try {
     const venuesResult = await pool.query(
       "SELECT DISTINCT venue_id FROM songs WHERE status = 'queued' AND added_to_spotify"
@@ -1572,8 +1583,8 @@ async function autoClearPlayed() {
         // A song the bar removed is about to be skipped; don't count it as a play of another
         // request for the same song
         const skipping = now && (await pool.query(
-          'SELECT 1 FROM spotify_skips WHERE venue_id = $1 AND uri = ANY($2) LIMIT 1', [venue_id, now.uris]
-        )).rows.length;
+          'SELECT uri, name, artist FROM spotify_skips WHERE venue_id = $1', [venue_id]
+        )).rows.some(k => isRequest(k, now));
         // The oldest request for the playing song that isn't also still waiting is the copy playing
         const hit = now && !skipping ? queued.find(s => !inSpotify.has(s.id) && isRequest(s, now)) : null;
         if (hit) {
@@ -1589,8 +1600,17 @@ async function autoClearPlayed() {
           const gone = [];
           for (const s of queued) {
             if (cleared.has(s.id)) continue;
-            if (inSpotify.has(s.id) || isRequest(s, now)) { missingRounds.set(s.id, 0); continue; }
-            if (!missingRounds.has(s.id)) continue; // never seen in Spotify: can't tell
+            if (inSpotify.has(s.id) || isRequest(s, now)) { missingRounds.set(s.id, 0); neverSeen.delete(s.id); continue; }
+            if (!missingRounds.has(s.id)) {
+              // Never seen in Spotify (e.g. it played as a copy we couldn't match). Only count it
+              // missing while music is playing, Spotify's whole queue is visible (it shows ~20),
+              // and Spotify has had a minute to list it; then 3 checks in a row (30s) clears it.
+              const sentAgo = s.sent_at ? Date.now() - new Date(s.sent_at).getTime() : 0;
+              if (!(now && now.isPlaying && waiting.length < 20 && sentAgo > 60000)) continue;
+              const u = (neverSeen.get(s.id) || 0) + 1;
+              if (u >= 3) { neverSeen.delete(s.id); gone.push(s.id); } else neverSeen.set(s.id, u);
+              continue;
+            }
             const n = missingRounds.get(s.id) + 1;
             if (n >= 2) gone.push(s.id); else missingRounds.set(s.id, n);
           }
@@ -1638,11 +1658,12 @@ async function skipRemovedSongs() {
         if (!token) continue;
         const now = await playingNow(token, venue_id);
         if (!now) continue;
-        const skip = await pool.query(
-          'SELECT id, name FROM spotify_skips WHERE venue_id = $1 AND uri = ANY($2) ORDER BY created_at LIMIT 1',
-          [venue_id, now.uris]
-        );
-        if (!skip.rows.length) continue;
+        const skips = (await pool.query(
+          'SELECT id, uri, name, artist FROM spotify_skips WHERE venue_id = $1 ORDER BY created_at', [venue_id]
+        )).rows;
+        const match = skips.find(k => isRequest(k, now));
+        if (!match) continue;
+        const skip = { rows: [match] };
         const r = await spotifyFetch('https://api.spotify.com/v1/me/player/next', {
           method: 'POST', headers: { Authorization: `Bearer ${token}` }
         });
@@ -1863,6 +1884,24 @@ app.get('/api/venue/status', async (req, res) => {
 app.get('/api/debug', async (req, res) => {
   try {
     const result = await pool.query('SELECT venue_id FROM venue_tokens');
+    // ?probe=1: which Spotify calls currently work for each bar (status codes only)
+    let probe;
+    if (req.query.probe === '1') {
+      probe = {};
+      for (const { venue_id } of result.rows) {
+        const token = await getVenueToken(venue_id);
+        if (!token) { probe[venue_id] = 'no token'; continue; }
+        const h = { headers: { Authorization: `Bearer ${token}` } };
+        const m = await venueMarket(venue_id);
+        const st = async u => { try { return (await spotifyFetch(u, h)).status; } catch (e) { return e.message; } };
+        probe[venue_id] = {
+          market: m,
+          player: await st(`https://api.spotify.com/v1/me/player?market=${m}`),
+          queue: await st('https://api.spotify.com/v1/me/player/queue'),
+          recentlyPlayed: await st('https://api.spotify.com/v1/me/player/recently-played?limit=1')
+        };
+      }
+    }
     res.json({
       hasSpotifyId: !!process.env.SPOTIFY_CLIENT_ID,
       hasSpotifySecret: !!process.env.SPOTIFY_CLIENT_SECRET,
@@ -1875,6 +1914,7 @@ app.get('/api/debug', async (req, res) => {
       hasAnthropicKey: !!process.env.ANTHROPIC_API_KEY,
       baseUrl: process.env.BASE_URL,
       connectedVenues: result.rows.map(r => r.venue_id),
+      probe,
       spotify: {
         pausedForRateLimitUntil: spotifyHealth.blockedUntil > Date.now() ? new Date(spotifyHealth.blockedUntil).toISOString() : null,
         lastOkAt: spotifyHealth.lastOkAt,
@@ -2160,9 +2200,9 @@ async function getUpcoming(venueId, zorosRows) {
     const spotifyQueue = (data.queue || []).filter(t => t && t.uri);
 
     // Songs the bar removed are still in Spotify's queue until they're skipped; leave them out
-    const skips = await pool.query('SELECT uri FROM spotify_skips WHERE venue_id = $1', [venueId]);
-    skips.rows.forEach(({ uri }) => {
-      const i = spotifyQueue.findIndex(t => t.uri === uri);
+    const skips = await pool.query('SELECT uri, name, artist FROM spotify_skips WHERE venue_id = $1', [venueId]);
+    skips.rows.forEach(k => {
+      const i = spotifyQueue.findIndex(t => isRequest(k, { uris: [t.uri], name: t.name, artists: t.artists }));
       if (i >= 0) spotifyQueue.splice(i, 1);
     });
 
@@ -2265,16 +2305,16 @@ app.post('/api/queue/played/:id', requireVenueAuth, async (req, res) => {
 app.post('/api/queue/skip/:id', requireVenueAuth, async (req, res) => {
   try {
     const r = await pool.query(
-      "DELETE FROM songs WHERE id = $1 AND venue_id = $2 AND status = 'queued' RETURNING uri, name, added_to_spotify",
+      "DELETE FROM songs WHERE id = $1 AND venue_id = $2 AND status = 'queued' RETURNING uri, name, artist, added_to_spotify",
       [req.params.id, req.session.venueId]
     );
     const song = r.rows[0];
     const willSkip = !!(song && song.added_to_spotify && song.uri);
     if (willSkip) {
-      await pool.query('INSERT INTO spotify_skips (venue_id, uri, name) VALUES ($1, $2, $3)', [req.session.venueId, song.uri, song.name]);
+      await pool.query('INSERT INTO spotify_skips (venue_id, uri, name, artist) VALUES ($1, $2, $3, $4)', [req.session.venueId, song.uri, song.name, song.artist]);
     }
     upcomingCache.delete(req.session.venueId);
-    res.json({ success: true, willSkip });
+    res.json({ success: !!song, willSkip, notFound: !song });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
