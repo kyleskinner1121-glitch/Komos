@@ -1,4 +1,4 @@
-// v7
+// v8
 require('dotenv').config();
 const express = require('express');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -20,6 +20,49 @@ const { syncBarLogin, markBarRemoved, setBarStatus, upsertUser, syncAllUsers } =
 const BAR_TRACKER_SHEET_ID = process.env.BAR_TRACKER_SHEET_ID || '1uKiVOtCNHVNYQyjYmmpzvosUOh79BDFxrShsS99ssWA';
 
 const app = express();
+
+// ── SPOTIFY RATE LIMITS ──
+// Every bar's Spotify calls count against the one Zoros Spotify app, so if Spotify says "too many
+// requests" (429) for any bar, every bar's search and queue stop working at once. When that happens,
+// all Spotify calls pause for as long as Spotify asks (Retry-After) instead of hammering it and
+// extending the block. Errors are logged with Spotify's own message and shown in /api/debug.
+const spotifyHealth = { blockedUntil: 0, lastOkAt: null, lastError: null };
+const spotifyLogged = new Map(); // "status path" -> last time it was logged, so errors don't flood the logs
+async function spotifyFetch(url, opts = {}) {
+  const path = String(url).replace('https://api.spotify.com', '').split('?')[0];
+  const wait = spotifyHealth.blockedUntil - Date.now();
+  if (wait > 0) {
+    return new Response(JSON.stringify({ error: { status: 429, message: 'Zoros is waiting out a Spotify rate limit' } }), {
+      status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': String(Math.ceil(wait / 1000)) }
+    });
+  }
+  const r = await fetch(url, opts);
+  if (r.ok) { spotifyHealth.lastOkAt = new Date().toISOString(); return r; }
+  if (r.status === 401 || r.status === 404) return r; // expired token / no active device: handled by the caller
+  let body = '';
+  try { body = (await r.clone().text()).slice(0, 300); } catch (e) {}
+  const retryAfter = r.headers.get('retry-after');
+  if (r.status === 429) {
+    const secs = Math.min(Math.max(parseInt(retryAfter, 10) || 30, 5), 24 * 3600);
+    spotifyHealth.blockedUntil = Date.now() + secs * 1000;
+    console.error(`[spotify] Rate limited (429) on ${path}; pausing all Spotify calls for ${secs}s`);
+  } else {
+    const key = `${r.status} ${path}`;
+    if (Date.now() - (spotifyLogged.get(key) || 0) > 60000) {
+      spotifyLogged.set(key, Date.now());
+      console.error(`[spotify] ${r.status} on ${path}: ${body}`);
+    }
+  }
+  spotifyHealth.lastError = { at: new Date().toISOString(), status: r.status, path, retryAfter, body };
+  return r;
+}
+
+// Short per-bar caches for what the bar dashboard polls. Each open dashboard tab asked Spotify
+// twice every 5 seconds; now all tabs for a bar share one answer.
+const statusCache = new Map();     // venueId -> { at, body }
+const nowPlayingCache = new Map(); // venueId -> { at, body }
+const STATUS_CACHE_MS = 30000;
+const NOW_PLAYING_CACHE_MS = 10000;
 
 // ── OLD ADDRESS → ZOROS DOMAIN ──
 // Page visits to the Railway address (old QR codes, bookmarks) move to BASE_URL, keeping the path and ?venue=.
@@ -1123,7 +1166,7 @@ async function spotifyArtistGenres(artistId, token) {
   if (!artistId) return { genres: [], ok: true };
   if (!token) return { genres: [], ok: false };
   try {
-    const r = await fetch(`https://api.spotify.com/v1/artists/${artistId}`, { headers: { Authorization: `Bearer ${token}` } });
+    const r = await spotifyFetch(`https://api.spotify.com/v1/artists/${artistId}`, { headers: { Authorization: `Bearer ${token}` } });
     if (!r.ok) return { genres: [], ok: false };
     const data = await r.json();
     return { genres: (data.genres || []).map(normGenre), ok: true };
@@ -1198,7 +1241,7 @@ async function lookupTrack(venueId, picked) {
   try {
     const token = await getVenueToken(venueId);
     if (!token) return fallback; // payments already require the bar's Spotify, so this is rare
-    const r = await fetch(`https://api.spotify.com/v1/tracks/${id}?market=from_token`, {
+    const r = await spotifyFetch(`https://api.spotify.com/v1/tracks/${id}?market=from_token`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     if (r.status === 401) { await spotifyTokenRejected(venueId); return fallback; }
@@ -1299,7 +1342,7 @@ async function addToSpotifyQueue(venueId, uri) {
   const token = await getVenueToken(venueId);
   if (!token) return { ok: false, status: 0, reason: 'no Spotify token' };
   try {
-    const r = await fetch(`https://api.spotify.com/v1/me/player/queue?uri=${encodeURIComponent(uri)}`, {
+    const r = await spotifyFetch(`https://api.spotify.com/v1/me/player/queue?uri=${encodeURIComponent(uri)}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -1318,7 +1361,7 @@ async function spotifyIsPlaying(venueId) {
   const token = await getVenueToken(venueId);
   if (!token) return false; // bar hasn't connected Spotify
   try {
-    const r = await fetch('https://api.spotify.com/v1/me/player', {
+    const r = await spotifyFetch('https://api.spotify.com/v1/me/player', {
       headers: { Authorization: `Bearer ${token}` }
     });
     if (r.status !== 200) return false; // 204 = no active device
@@ -1333,7 +1376,7 @@ async function spotifyIsPlaying(venueId) {
 // market makes Spotify say which song was requested when it plays its local version of it under a
 // different ID (track relinking), so a request still matches when it plays.
 async function playingNow(token) {
-  const r = await fetch('https://api.spotify.com/v1/me/player?market=from_token', {
+  const r = await spotifyFetch('https://api.spotify.com/v1/me/player?market=from_token', {
     headers: { Authorization: `Bearer ${token}` }
   });
   if (r.status !== 200) return null; // 204 = no active device
@@ -1347,7 +1390,7 @@ async function playingNow(token) {
 
 // The songs waiting in the bar's Spotify queue (Spotify only shows roughly the next 20), or null
 async function spotifyQueueTracks(token) {
-  const r = await fetch('https://api.spotify.com/v1/me/player/queue', { headers: { Authorization: `Bearer ${token}` } });
+  const r = await spotifyFetch('https://api.spotify.com/v1/me/player/queue', { headers: { Authorization: `Bearer ${token}` } });
   if (r.status !== 200) return null;
   const data = await r.json();
   return (data.queue || []).filter(t => t && t.uri).map(t => ({ uris: [t.uri], name: t.name, artists: t.artists }));
@@ -1526,7 +1569,7 @@ async function autoClearPlayed() {
         // Backup for songs that played between checks. Only counts a play that started after the
         // request was sent, so a song that was already playing when someone requested it again
         // doesn't clear the new request.
-        const recentRes = await fetch('https://api.spotify.com/v1/me/player/recently-played?limit=10', {
+        const recentRes = await spotifyFetch('https://api.spotify.com/v1/me/player/recently-played?limit=10', {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (recentRes.status === 200) {
@@ -1569,7 +1612,7 @@ async function skipRemovedSongs() {
           [venue_id, now.uris]
         );
         if (!skip.rows.length) continue;
-        const r = await fetch('https://api.spotify.com/v1/me/player/next', {
+        const r = await spotifyFetch('https://api.spotify.com/v1/me/player/next', {
           method: 'POST', headers: { Authorization: `Bearer ${token}` }
         });
         if (r.ok) {
@@ -1719,10 +1762,14 @@ app.get('/auth/spotify/callback', async (req, res) => {
 
 app.get('/api/now-playing', async (req, res) => {
   const venueId = req.query.venueId || 'default';
+  const hit = nowPlayingCache.get(venueId);
+  if (hit && Date.now() - hit.at < NOW_PLAYING_CACHE_MS) return res.json(hit.body);
+  const json = res.json.bind(res);
+  res.json = body => { nowPlayingCache.set(venueId, { at: Date.now(), body }); return json(body); };
   const token = await getVenueToken(venueId);
   if (!token) return res.json({ playing: false });
   try {
-    const r = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
+    const r = await spotifyFetch('https://api.spotify.com/v1/me/player/currently-playing', {
       headers: { Authorization: `Bearer ${token}` }
     });
     if (r.status === 204 || r.status === 404) return res.json({ playing: false });
@@ -1757,10 +1804,14 @@ app.post('/api/queue/auto-clear', async (req, res) => {
 
 app.get('/api/venue/status', async (req, res) => {
   const venueId = req.query.venueId || req.session.venueId || 'default';
+  const hit = statusCache.get(venueId);
+  if (hit && Date.now() - hit.at < STATUS_CACHE_MS) return res.json(hit.body);
+  const json = res.json.bind(res);
+  res.json = body => { statusCache.set(venueId, { at: Date.now(), body }); return json(body); };
   const token = await getVenueToken(venueId);
   if (!token) return res.json({ connected: false });
   try {
-    const r = await fetch('https://api.spotify.com/v1/me/player', {
+    const r = await spotifyFetch('https://api.spotify.com/v1/me/player', {
       headers: { Authorization: `Bearer ${token}` }
     });
     if (r.status === 200) {
@@ -1792,7 +1843,12 @@ app.get('/api/debug', async (req, res) => {
       hasGoogleServiceAccountKey: !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY,
       hasAnthropicKey: !!process.env.ANTHROPIC_API_KEY,
       baseUrl: process.env.BASE_URL,
-      connectedVenues: result.rows.map(r => r.venue_id)
+      connectedVenues: result.rows.map(r => r.venue_id),
+      spotify: {
+        pausedForRateLimitUntil: spotifyHealth.blockedUntil > Date.now() ? new Date(spotifyHealth.blockedUntil).toISOString() : null,
+        lastOkAt: spotifyHealth.lastOkAt,
+        lastError: spotifyHealth.lastError
+      }
     });
   } catch (e) {
     res.json({ error: e.message });
@@ -1842,11 +1898,13 @@ app.get('/api/search', async (req, res) => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (r.status === 401) await spotifyTokenRejected(venueId);
-      const data = await r.json();
+      lastStatus = r.status;
+      const data = await r.json().catch(() => ({}));
       return (data.tracks && data.tracks.items) || null;
     };
+    let lastStatus = 0;
     const pages = await Promise.all(filtering ? [fetchPage(0), fetchPage(10)] : [fetchPage(0)]);
-    if (!pages[0]) return res.json({ tracks: [], error: 'Spotify API error' });
+    if (!pages[0]) return res.json({ tracks: [], error: 'Spotify API error', spotifyStatus: lastStatus, rateLimited: lastStatus === 429 });
     const items = pages.flat().filter(t => t && t.is_playable !== false); // unplayable in the bar's country
 
     let tracks = items.map(t => ({
@@ -2064,7 +2122,7 @@ async function getUpcoming(venueId, zorosRows) {
   const token = await getVenueToken(venueId);
   if (!token) return null;
   try {
-    const r = await fetch('https://api.spotify.com/v1/me/player/queue', { headers: { Authorization: `Bearer ${token}` } });
+    const r = await spotifyFetch('https://api.spotify.com/v1/me/player/queue', { headers: { Authorization: `Bearer ${token}` } });
     if (r.status !== 200) return null;
     const data = await r.json();
     const spotifyQueue = (data.queue || []).filter(t => t && t.uri);
