@@ -2134,7 +2134,8 @@ app.post('/api/create-payment', async (req, res) => {
         image: String(image || '').slice(0, 480),
         uri: String(uri || ''),
         venueId: String(venueId),
-        src: cleanSrc(src) || ''
+        src: cleanSrc(src) || '',
+        userId: req.session.userId ? String(req.session.userId) : '' // so the song counts toward the patron's total
       },
       success_url: `${process.env.BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}&track_id=${trackId}&track_name=${encodeURIComponent(trackName)}&artist=${encodeURIComponent(artist)}&image=${encodeURIComponent(image || '')}&uri=${encodeURIComponent(uri)}&venue_id=${venueId}`,
       cancel_url: `${process.env.BASE_URL}?venue=${venueId}`
@@ -2174,17 +2175,19 @@ app.post('/api/queue/add', async (req, res) => {
       return res.json({ success: true, alreadyProcessed: true, position: await countQueued() });
     }
 
+    const userId = parseInt(m.userId, 10) || null; // logged in when they paid
     const id = newSongId();
     await pool.query(`
-      INSERT INTO songs (id, track_id, name, artist, image, uri, venue_id, added_to_spotify, amount_paid)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8)
-    `, [id, track_id, track_name, artist, image, uri, venue_id, stripeSession.amount_total || 99]);
+      INSERT INTO songs (id, track_id, name, artist, image, uri, venue_id, added_to_spotify, amount_paid, user_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8, $9)
+    `, [id, track_id, track_name, artist, image, uri, venue_id, stripeSession.amount_total || 99, userId]);
     const addedToSpotify = await sendPendingToSpotify(venue_id, id);
     const position = await pool.query(
       "SELECT COUNT(*) FROM songs WHERE venue_id = $1 AND status = 'queued'",
       [venue_id]
     );
     res.json({ success: true, position: parseInt(position.rows[0].count), addedToSpotify });
+    if (userId) syncUserToSheet(userId);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
