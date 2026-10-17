@@ -333,13 +333,20 @@ const USER_SHEET_SQL = `
          (SELECT COUNT(*) FROM songs s WHERE s.user_id = u.id) AS songs_used,
          (SELECT MAX(s.added_at) FROM songs s WHERE s.user_id = u.id) AS last_song
   FROM users u`;
-async function syncUserToSheet(userId) {
-  try {
+// Writes go one at a time: signing up and claiming a bundle sync the same patron within a second,
+// and two writes at once both saw "not listed yet" and each added a row. Each write reads the
+// database when its turn comes, so the row always ends up with the latest numbers.
+let userSheetQueue = Promise.resolve();
+function inUserSheetQueue(task) {
+  const run = userSheetQueue.then(task);
+  userSheetQueue = run.catch(() => {});
+  return run;
+}
+function syncUserToSheet(userId) {
+  return inUserSheetQueue(async () => {
     const r = await pool.query(`${USER_SHEET_SQL} WHERE u.id = $1`, [userId]);
     if (r.rows[0]) await upsertUser(r.rows[0]);
-  } catch (e) {
-    console.error('[links-sheet] user sync failed:', e.message);
-  }
+  }).catch(e => console.error('[links-sheet] user sync failed:', e.message));
 }
 
 // ── USER AUTH ROUTES ──
@@ -779,9 +786,12 @@ app.post('/api/admin/restore-venue', async (req, res) => {
 app.post('/api/admin/sync-users', async (req, res) => {
   if (!isAdmin(req)) return res.status(403).json({ error: 'Unauthorized' });
   try {
-    const r = await pool.query(`${USER_SHEET_SQL} ORDER BY u.created_at`);
-    await syncAllUsers(r.rows);
-    res.json({ success: true, count: r.rows.length });
+    const count = await inUserSheetQueue(async () => {
+      const r = await pool.query(`${USER_SHEET_SQL} ORDER BY u.created_at`);
+      await syncAllUsers(r.rows);
+      return r.rows.length;
+    });
+    res.json({ success: true, count });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
