@@ -93,7 +93,7 @@ async function setBarStatus(venueId, status, { clearPassword = false } = {}) {
 const markBarRemoved = venueId => setBarStatus(venueId, 'Removed', { clearPassword: true });
 
 // ── USERS TAB ──
-// One row per patron account: Email | Signed up | Credits left | Total songs played | Last song played.
+// One row per patron account: Email | Signed up | Credits left | Total songs requested | Last song played.
 // Row 1 is the header. Passwords are never written here; patrons choose their own.
 const USERS_TAB = 'Users';
 

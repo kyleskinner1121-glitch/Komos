@@ -209,6 +209,12 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    // Every song a patron has requested, with credits or paid one by one. A counter, because a song
+    // the bar removes is deleted from songs but still counts as requested. Existing accounts start
+    // from the songs still on record (removed ones from before this column can't be recovered).
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS songs_requested INTEGER`);
+    await pool.query(`UPDATE users u SET songs_requested = (SELECT COUNT(*) FROM songs s WHERE s.user_id = u.id) WHERE songs_requested IS NULL`);
+    await pool.query(`ALTER TABLE users ALTER COLUMN songs_requested SET DEFAULT 0`);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS venues (
         id SERIAL PRIMARY KEY,
@@ -330,7 +336,7 @@ function requireVenueAuth(req, res, next) {
 // hold up a sign-up or a song. The database stays the record; the tab mirrors it.
 const USER_SHEET_SQL = `
   SELECT u.email, u.created_at, u.credits,
-         (SELECT COUNT(*) FROM songs s WHERE s.user_id = u.id) AS songs_used,
+         COALESCE(u.songs_requested, 0) AS songs_used,
          (SELECT MAX(s.added_at) FROM songs s WHERE s.user_id = u.id) AS last_song
   FROM users u`;
 // Writes go one at a time: signing up and claiming a bundle sync the same patron within a second,
@@ -1139,7 +1145,7 @@ app.post('/api/queue/use-credit', async (req, res) => {
     if (!user.rows.length || user.rows[0].credits < 1) {
       return res.status(400).json({ error: 'No credits remaining' });
     }
-    await pool.query('UPDATE users SET credits = credits - 1 WHERE id = $1', [req.session.userId]);
+    await pool.query('UPDATE users SET credits = credits - 1, songs_requested = COALESCE(songs_requested, 0) + 1 WHERE id = $1', [req.session.userId]);
     const id = newSongId();
     await pool.query(`
       INSERT INTO songs (id, track_id, name, artist, image, uri, venue_id, user_id, added_to_spotify, amount_paid)
@@ -2181,6 +2187,7 @@ app.post('/api/queue/add', async (req, res) => {
       INSERT INTO songs (id, track_id, name, artist, image, uri, venue_id, added_to_spotify, amount_paid, user_id)
       VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8, $9)
     `, [id, track_id, track_name, artist, image, uri, venue_id, stripeSession.amount_total || 99, userId]);
+    if (userId) await pool.query('UPDATE users SET songs_requested = COALESCE(songs_requested, 0) + 1 WHERE id = $1', [userId]);
     const addedToSpotify = await sendPendingToSpotify(venue_id, id);
     const position = await pool.query(
       "SELECT COUNT(*) FROM songs WHERE venue_id = $1 AND status = 'queued'",
