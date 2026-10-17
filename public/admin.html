@@ -60,7 +60,7 @@
   .banner { background: rgba(255,85,0,0.1); border: 1px solid rgba(255,85,0,0.35); color: #ffc7ad; border-radius: 10px; padding: 10px 14px; font-size: 13px; margin-bottom: 18px; }
 
   /* KPIs */
-  .kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 14px; }
+  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 14px; }
   .kpi { background: var(--navy); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; min-width: 0; }
   .kpi .label { color: var(--muted); font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
   .kpi .value { font-family: 'Space Grotesk', sans-serif; font-size: 28px; font-weight: 700; margin-top: 6px; white-space: nowrap; }
@@ -94,7 +94,6 @@
   .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--dim); }
   .pill.ok .dot { background: var(--green); }
   .pill.bad .dot { background: var(--red); }
-  .owed { color: var(--orange); font-weight: 600; }
 
   /* Song lists */
   .song { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid rgba(58,47,120,0.5); }
@@ -196,7 +195,7 @@
         <h2>Bars</h2>
         <button class="btn small" onclick="openAddBar()">Add bar</button>
       </div>
-      <div class="hint">For the selected period. "Buy rate" is purchases ÷ unique visitors. The bar's share is after Stripe fees. "Owed" is what you still pay by hand: live payments only, minus payouts you've recorded. Payments Stripe split automatically are already paid and aren't in it.</div>
+      <div class="hint">For the selected period. "Buy rate" is purchases ÷ unique visitors. The bar's share is after Stripe fees.</div>
       <div class="tbl-wrap"><table id="barsTbl"></table></div>
     </div>
 
@@ -219,35 +218,12 @@
       </div>
     </div>
 
-    <div class="grid2">
-      <div class="card">
-        <h2>Bar applications</h2>
-        <div class="hint">Latest sign-ups from the apply page.</div>
-        <div class="tbl-wrap"><table id="appsTbl"></table></div>
-      </div>
-      <div class="card">
-        <h2>Payouts to bars</h2>
-        <div class="hint">Payments you've marked as sent.</div>
-        <div class="tbl-wrap"><table id="payoutsTbl"></table></div>
-      </div>
+    <div class="card">
+      <h2>Bar applications</h2>
+      <div class="hint">Latest sign-ups from the apply page.</div>
+      <div class="tbl-wrap"><table id="appsTbl"></table></div>
     </div>
   </div>
-</div>
-
-<div class="modal-bg hidden" id="payModal">
-  <form class="modal" onsubmit="submitPayout(event)">
-    <h3>Record a payout</h3>
-    <p id="payWho"></p>
-    <label for="payAmount">Amount (€)</label>
-    <input id="payAmount" type="number" step="0.01" min="0.01" required>
-    <label for="payNote">Note (optional)</label>
-    <input id="payNote" type="text" placeholder="e.g. Bank transfer, week 41">
-    <div class="err" id="payErr"></div>
-    <div class="actions">
-      <button type="button" class="btn ghost" onclick="closePay()">Cancel</button>
-      <button type="submit" class="btn">Save payout</button>
-    </div>
-  </form>
 </div>
 
 <div class="modal-bg hidden" id="addModal">
@@ -291,7 +267,6 @@ const store = {
 let KEY = store.get('zoros_admin_key') || '';
 let range = store.get('zoros_admin_range') || '7d';
 let data = null;
-let payVenue = null;
 let timer = null;
 
 document.getElementById('liveOnly').checked = store.get('zoros_admin_live') === '1';
@@ -391,8 +366,7 @@ function render() {
     { label: 'Zoros keeps', value: eur(t.zorosNet), sub: 'after bars and Stripe fees', neg: t.zorosNet < 0 },
     { label: 'Songs queued', value: int(t.songs), sub: t.payments ? eur(Math.round(t.revenue / t.payments)) + ' avg payment' : 'no payments yet' },
     { label: 'Visitors', value: int(t.visitors), sub: 'unique phones that opened the app' },
-    { label: 'Buy rate', value: pct(t.payments, t.visitors), sub: 'purchases ÷ visitors' },
-    { label: 'Owed to bars', value: eur(t.owedNow), sub: 'live, not yet paid out' }
+    { label: 'Buy rate', value: pct(t.payments, t.visitors), sub: 'purchases ÷ visitors' }
   ];
   document.getElementById('kpis').innerHTML = kpis.map(k => `
     <div class="kpi ${k.hero ? 'hero' : ''}">
@@ -413,7 +387,6 @@ function render() {
   renderSongs('topSongs', d.topSongs, true);
   renderSongs('recentSongs', d.recentSongs, false);
   renderApps(d.applications);
-  renderPayouts(d.payouts);
 }
 
 function renderChart(rows) {
@@ -497,7 +470,7 @@ function renderBars(bars) {
   }
   el.innerHTML = `<thead><tr>
       <th>Bar</th><th>Status</th><th class="r">Visitors</th><th class="r">Songs</th><th class="r">Payments</th>
-      <th class="r">Buy rate</th><th class="r">Revenue</th><th class="r">Bar's ${data.barSharePct}% after fees</th><th>Last song</th><th class="r">Owed</th><th></th>
+      <th class="r">Buy rate</th><th class="r">Revenue</th><th class="r">Bar's ${data.barSharePct}% after fees</th><th>Last song</th><th></th>
     </tr></thead><tbody>` + bars.map(b => `
     <tr>
       <td><div class="bar-name">${esc(b.name || b.venue_id.replace(/-/g, ' '))}</div><div class="bar-id">${esc(b.venue_id)}${b.name ? '' : ' · no account'}</div></td>
@@ -509,8 +482,7 @@ function renderBars(bars) {
       <td class="r num">${eur(b.revenue)}</td>
       <td class="r num">${eur(b.bar_share)}</td>
       <td>${ago(b.last_song)}</td>
-      <td class="r num ${b.owed ? 'owed' : ''}">${eur(b.owed)}</td>
-      <td class="row-actions">${b.owed ? `<button class="btn ghost small" onclick="openPay('${esc(b.venue_id)}')">Mark paid</button> ` : ''}${b.name && !b.removed ? `<button class="btn ghost small" onclick="linkStripe('${esc(b.venue_id)}')">Stripe</button> <button class="btn ghost small" onclick="resetPassword('${esc(b.venue_id)}')">Reset password</button> ` : ''}${b.removed ? `<button class="btn ghost small" onclick="restoreBar('${esc(b.venue_id)}')">Restore</button>` : `<button class="btn ghost small danger" onclick="removeBar('${esc(b.venue_id)}')">Remove</button>`}</td>
+      <td class="row-actions">${b.name && !b.removed ? `<button class="btn ghost small" onclick="linkStripe('${esc(b.venue_id)}')">Stripe</button> <button class="btn ghost small" onclick="resetPassword('${esc(b.venue_id)}')">Reset password</button> ` : ''}${b.removed ? `<button class="btn ghost small" onclick="restoreBar('${esc(b.venue_id)}')">Restore</button>` : `<button class="btn ghost small danger" onclick="removeBar('${esc(b.venue_id)}')">Remove</button>`}</td>
     </tr>`).join('') + '</tbody>';
 }
 
@@ -541,42 +513,6 @@ function renderApps(rows) {
       <td>${esc(a.contact_name)}<div class="bar-id">${esc(a.email)}</div></td>
       <td><span class="pill ${a.status === 'new' ? 'ok' : ''}"><span class="dot"></span>${esc(a.status)}</span></td>
       <td>${ago(a.created_at)}</td></tr>`).join('') + '</tbody>';
-}
-
-function renderPayouts(rows) {
-  const el = document.getElementById('payoutsTbl');
-  if (!rows.length) { el.innerHTML = '<tr><td class="empty">No payouts recorded yet.</td></tr>'; return; }
-  el.innerHTML = `<thead><tr><th>Bar</th><th class="r">Amount</th><th>Note</th><th>Date</th></tr></thead><tbody>` +
-    rows.map(p => `<tr><td>${esc(barName(p.venue_id))}</td><td class="r num">${eur(p.amount)}</td><td>${esc(p.note || '')}</td><td>${day(p.paid_at)}</td></tr>`).join('') + '</tbody>';
-}
-
-// ── PAYOUTS ──
-function openPay(venueId) {
-  const b = data.bars.find(x => x.venue_id === venueId);
-  payVenue = venueId;
-  document.getElementById('payWho').textContent = `${b.name || venueId} is owed ${eur(b.owed)}.`;
-  document.getElementById('payAmount').value = (b.owed / 100).toFixed(2);
-  document.getElementById('payNote').value = '';
-  document.getElementById('payErr').textContent = '';
-  document.getElementById('payModal').classList.remove('hidden');
-}
-function closePay() { document.getElementById('payModal').classList.add('hidden'); }
-async function submitPayout(e) {
-  e.preventDefault();
-  const cents = Math.round(parseFloat(document.getElementById('payAmount').value) * 100);
-  try {
-    const r = await fetch('/api/admin/payout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-admin-key': KEY },
-      body: JSON.stringify({ venueId: payVenue, amount: cents, note: document.getElementById('payNote').value })
-    });
-    const d = await r.json();
-    if (!d.success) throw new Error(d.error || 'Failed');
-    closePay();
-    load();
-  } catch (err) {
-    document.getElementById('payErr').textContent = err.message;
-  }
 }
 
 // ── BAR ACCOUNTS ──
@@ -650,9 +586,9 @@ async function linkStripe(venueId) {
   if (acct === null) return;
   try {
     const d = await adminPost('/api/admin/stripe-account', { venueId, accountId: acct.trim() });
-    if (!d.linked) alert(`Automatic payouts are off for ${name}. Pay them by hand from "Owed".`);
+    if (!d.linked) alert(`Automatic payouts are off for ${name}. Its payments go to Zoros until it's linked again.`);
     else if (d.ready) alert(`${name} is linked and enabled. From now on its payments are split automatically.`);
-    else alert(`${name} is linked, but not active yet: ${d.status}.\n\nPayments keep going to Zoros (pay by hand from "Owed") until Stripe enables the account, then switch over on their own.`);
+    else alert(`${name} is linked, but not active yet: ${d.status}.\n\nPayments keep going to Zoros until Stripe enables the account, then switch over on their own.`);
     await load(); loadStripeStatus();
   } catch (err) {
     alert(err.message);
@@ -673,8 +609,7 @@ async function syncUsers() {
 async function removeBar(venueId) {
   const b = data.bars.find(x => x.venue_id === venueId);
   const name = barName(venueId);
-  const owed = b && b.owed ? `\n\nYou still owe ${name} ${eur(b.owed)}. That stays on the dashboard under "Show removed bars".` : '';
-  if (!confirm(`Remove ${name}?\n\nIts QR codes stop working, its login and Spotify are disconnected, and it's hidden from this dashboard. Its songs and payments are kept.${owed}`)) return;
+  if (!confirm(`Remove ${name}?\n\nIts QR codes stop working, its login and Spotify are disconnected, and it's hidden from this dashboard. Its songs and payments are kept.`)) return;
   try {
     const d = await adminPost('/api/admin/remove-venue', { venueId });
     if (!d.sheetSynced) alert(`${name} was removed, but the Zoros Links sheet couldn't be updated (${d.sheetError}). Mark it as Removed there by hand.`);

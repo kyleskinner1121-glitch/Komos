@@ -209,6 +209,12 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    // Every song a patron has requested, with credits or paid one by one. A counter, because a song
+    // the bar removes is deleted from songs but still counts as requested. Existing accounts start
+    // from the songs still on record (removed ones from before this column can't be recovered).
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS songs_requested INTEGER`);
+    await pool.query(`UPDATE users u SET songs_requested = (SELECT COUNT(*) FROM songs s WHERE s.user_id = u.id) WHERE songs_requested IS NULL`);
+    await pool.query(`ALTER TABLE users ALTER COLUMN songs_requested SET DEFAULT 0`);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS venues (
         id SERIAL PRIMARY KEY,
@@ -330,16 +336,23 @@ function requireVenueAuth(req, res, next) {
 // hold up a sign-up or a song. The database stays the record; the tab mirrors it.
 const USER_SHEET_SQL = `
   SELECT u.email, u.created_at, u.credits,
-         (SELECT COUNT(*) FROM songs s WHERE s.user_id = u.id) AS songs_used,
+         COALESCE(u.songs_requested, 0) AS songs_used,
          (SELECT MAX(s.added_at) FROM songs s WHERE s.user_id = u.id) AS last_song
   FROM users u`;
-async function syncUserToSheet(userId) {
-  try {
+// Writes go one at a time: signing up and claiming a bundle sync the same patron within a second,
+// and two writes at once both saw "not listed yet" and each added a row. Each write reads the
+// database when its turn comes, so the row always ends up with the latest numbers.
+let userSheetQueue = Promise.resolve();
+function inUserSheetQueue(task) {
+  const run = userSheetQueue.then(task);
+  userSheetQueue = run.catch(() => {});
+  return run;
+}
+function syncUserToSheet(userId) {
+  return inUserSheetQueue(async () => {
     const r = await pool.query(`${USER_SHEET_SQL} WHERE u.id = $1`, [userId]);
     if (r.rows[0]) await upsertUser(r.rows[0]);
-  } catch (e) {
-    console.error('[links-sheet] user sync failed:', e.message);
-  }
+  }).catch(e => console.error('[links-sheet] user sync failed:', e.message));
 }
 
 // ── USER AUTH ROUTES ──
@@ -779,9 +792,12 @@ app.post('/api/admin/restore-venue', async (req, res) => {
 app.post('/api/admin/sync-users', async (req, res) => {
   if (!isAdmin(req)) return res.status(403).json({ error: 'Unauthorized' });
   try {
-    const r = await pool.query(`${USER_SHEET_SQL} ORDER BY u.created_at`);
-    await syncAllUsers(r.rows);
-    res.json({ success: true, count: r.rows.length });
+    const count = await inUserSheetQueue(async () => {
+      const r = await pool.query(`${USER_SHEET_SQL} ORDER BY u.created_at`);
+      await syncAllUsers(r.rows);
+      return r.rows.length;
+    });
+    res.json({ success: true, count });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -1129,7 +1145,7 @@ app.post('/api/queue/use-credit', async (req, res) => {
     if (!user.rows.length || user.rows[0].credits < 1) {
       return res.status(400).json({ error: 'No credits remaining' });
     }
-    await pool.query('UPDATE users SET credits = credits - 1 WHERE id = $1', [req.session.userId]);
+    await pool.query('UPDATE users SET credits = credits - 1, songs_requested = COALESCE(songs_requested, 0) + 1 WHERE id = $1', [req.session.userId]);
     const id = newSongId();
     await pool.query(`
       INSERT INTO songs (id, track_id, name, artist, image, uri, venue_id, user_id, added_to_spotify, amount_paid)
@@ -2124,7 +2140,8 @@ app.post('/api/create-payment', async (req, res) => {
         image: String(image || '').slice(0, 480),
         uri: String(uri || ''),
         venueId: String(venueId),
-        src: cleanSrc(src) || ''
+        src: cleanSrc(src) || '',
+        userId: req.session.userId ? String(req.session.userId) : '' // so the song counts toward the patron's total
       },
       success_url: `${process.env.BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}&track_id=${trackId}&track_name=${encodeURIComponent(trackName)}&artist=${encodeURIComponent(artist)}&image=${encodeURIComponent(image || '')}&uri=${encodeURIComponent(uri)}&venue_id=${venueId}`,
       cancel_url: `${process.env.BASE_URL}?venue=${venueId}`
@@ -2164,17 +2181,20 @@ app.post('/api/queue/add', async (req, res) => {
       return res.json({ success: true, alreadyProcessed: true, position: await countQueued() });
     }
 
+    const userId = parseInt(m.userId, 10) || null; // logged in when they paid
     const id = newSongId();
     await pool.query(`
-      INSERT INTO songs (id, track_id, name, artist, image, uri, venue_id, added_to_spotify, amount_paid)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8)
-    `, [id, track_id, track_name, artist, image, uri, venue_id, stripeSession.amount_total || 99]);
+      INSERT INTO songs (id, track_id, name, artist, image, uri, venue_id, added_to_spotify, amount_paid, user_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8, $9)
+    `, [id, track_id, track_name, artist, image, uri, venue_id, stripeSession.amount_total || 99, userId]);
+    if (userId) await pool.query('UPDATE users SET songs_requested = COALESCE(songs_requested, 0) + 1 WHERE id = $1', [userId]);
     const addedToSpotify = await sendPendingToSpotify(venue_id, id);
     const position = await pool.query(
       "SELECT COUNT(*) FROM songs WHERE venue_id = $1 AND status = 'queued'",
       [venue_id]
     );
     res.json({ success: true, position: parseInt(position.rows[0].count), addedToSpotify });
+    if (userId) syncUserToSheet(userId);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
