@@ -27,6 +27,7 @@ const app = express();
 // all Spotify calls pause for as long as Spotify asks (Retry-After) instead of hammering it and
 // extending the block. Errors are logged with Spotify's own message and shown in /api/debug.
 const spotifyHealth = { blockedUntil: 0, lastOkAt: null, lastError: null };
+const SPOTIFY_MAX_PAUSE_SECS = 60;
 const spotifyLogged = new Map(); // "status path" -> last time it was logged, so errors don't flood the logs
 async function spotifyFetch(url, opts = {}) {
   const path = String(url).replace('https://api.spotify.com', '').split('?')[0];
@@ -43,9 +44,13 @@ async function spotifyFetch(url, opts = {}) {
   try { body = (await r.clone().text()).slice(0, 300); } catch (e) {}
   const retryAfter = r.headers.get('retry-after');
   if (r.status === 429) {
-    const secs = Math.min(Math.max(parseInt(retryAfter, 10) || 30, 5), 24 * 3600);
+    // Never pause longer than SPOTIFY_MAX_PAUSE_SECS: on 23 Oct Spotify asked for ~23.6 hours and
+    // Zoros stopped searching and queuing for the rest of the night. If Spotify is still limiting
+    // after the pause, the next call gets another 429 and pauses again, costing one call a minute.
+    const asked = parseInt(retryAfter, 10) || 30;
+    const secs = Math.min(Math.max(asked, 5), SPOTIFY_MAX_PAUSE_SECS);
     spotifyHealth.blockedUntil = Date.now() + secs * 1000;
-    console.error(`[spotify] Rate limited (429) on ${path}; pausing all Spotify calls for ${secs}s`);
+    console.error(`[spotify] Rate limited (429) on ${path}; Spotify asked for ${asked}s, pausing all Spotify calls for ${secs}s`);
   } else {
     const key = `${r.status} ${path}`;
     if (Date.now() - (spotifyLogged.get(key) || 0) > 60000) {
@@ -1282,17 +1287,46 @@ async function lastfmArtistTags(artistName) {
   }
 }
 
-// Artist genres rarely change, so remember them for a day to keep API calls low.
-// A lookup that failed isn't remembered, so it's retried on the next search.
-const artistGenreCache = new Map();
+// Artist genres rarely change, so remember them for a week to keep Spotify calls low: every
+// search with a genre filter looks up each result's artist, and that burst is what got Zoros
+// rate limited. Spotify's answer is kept even when Last.fm fails (then only for an hour, so
+// Last.fm is retried), and a Spotify lookup that failed is not repeated for 10 minutes.
+const ARTIST_GENRES_TTL = 7 * 24 * 60 * 60 * 1000;
+const ARTIST_GENRES_PARTIAL_TTL = 60 * 60 * 1000;
+const ARTIST_GENRES_FAILED_TTL = 10 * 60 * 1000;
+const artistGenreCache = new Map();   // cacheKey -> { genres, at, ttl }
+const artistGenreLookups = new Map(); // cacheKey -> lookup in progress, shared by searches at the same time
 async function getArtistGenres(artistId, artistName, token) {
   const cacheKey = artistId || `name:${artistName || ''}`;
   const hit = artistGenreCache.get(cacheKey);
-  if (hit && Date.now() - hit.at < 24 * 60 * 60 * 1000) return hit.genres;
-  const [sp, lf] = await Promise.all([spotifyArtistGenres(artistId, token), lastfmArtistTags(artistName)]);
-  const genres = [...new Set([...sp.genres, ...lf.genres])];
-  if (sp.ok && lf.ok) artistGenreCache.set(cacheKey, { genres, at: Date.now() });
-  return genres;
+  if (hit && Date.now() - hit.at < hit.ttl) return hit.genres;
+  if (artistGenreLookups.has(cacheKey)) return artistGenreLookups.get(cacheKey);
+  const lookup = (async () => {
+    const [sp, lf] = await Promise.all([withArtistLookupSlot(() => spotifyArtistGenres(artistId, token)), lastfmArtistTags(artistName)]);
+    const genres = [...new Set([...sp.genres, ...lf.genres])];
+    const ttl = !sp.ok ? ARTIST_GENRES_FAILED_TTL : lf.ok ? ARTIST_GENRES_TTL : ARTIST_GENRES_PARTIAL_TTL;
+    if (artistGenreCache.size > 20000) artistGenreCache.clear();
+    artistGenreCache.set(cacheKey, { genres, at: Date.now(), ttl });
+    return genres;
+  })().finally(() => artistGenreLookups.delete(cacheKey));
+  artistGenreLookups.set(cacheKey, lookup);
+  return lookup;
+}
+
+// At most 3 Spotify artist lookups at once across all bars, so a search can't fire 20 together
+const ARTIST_LOOKUP_SLOTS = 3;
+let artistLookupsRunning = 0;
+const artistLookupWaiting = [];
+async function withArtistLookupSlot(fn) {
+  // A finished lookup hands its slot straight to the next one waiting, so the count stays exact
+  if (artistLookupsRunning >= ARTIST_LOOKUP_SLOTS) await new Promise(resolve => artistLookupWaiting.push(resolve));
+  else artistLookupsRunning++;
+  try {
+    return await fn();
+  } finally {
+    const next = artistLookupWaiting.shift();
+    if (next) next(); else artistLookupsRunning--;
+  }
 }
 
 // track needs { explicit, artistId, artistName }. Returns true if the bar's settings allow it.
@@ -2004,6 +2038,11 @@ function hiddenWorthMentioning(removed, shown, q) {
   return removed.filter(t => matchesSearch(t.name, q));
 }
 
+// Search results per country and query, kept 10 minutes: guests at a bar type the same
+// searches, and each one otherwise costs Spotify calls
+const SEARCH_CACHE_MS = 10 * 60 * 1000;
+const searchCache = new Map(); // "market|offset|query" -> { items, at }
+
 app.get('/api/search', async (req, res) => {
   try {
     const { q, venueId } = req.query;
@@ -2019,6 +2058,9 @@ app.get('/api/search', async (req, res) => {
     // grab a second page so patrons still see a decent list.
     const market = await venueMarket(venueId);
     const fetchPage = async (offset) => {
+      const cacheKey = `${market}|${offset}|${String(q).trim().toLowerCase()}`;
+      const hit = searchCache.get(cacheKey);
+      if (hit && Date.now() - hit.at < SEARCH_CACHE_MS) return hit.items;
       const r = await spotifyFetch(
         `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${offset}&market=${market}`,
         { headers: { Authorization: `Bearer ${token}` } }
@@ -2026,7 +2068,12 @@ app.get('/api/search', async (req, res) => {
       if (r.status === 401) await spotifyTokenRejected(venueId);
       lastStatus = r.status;
       const data = await r.json().catch(() => ({}));
-      return (data.tracks && data.tracks.items) || null;
+      const items = (data.tracks && data.tracks.items) || null;
+      if (items) {
+        if (searchCache.size > 5000) searchCache.clear();
+        searchCache.set(cacheKey, { items, at: Date.now() });
+      }
+      return items;
     };
     let lastStatus = 0;
     const pages = await Promise.all(filtering ? [fetchPage(0), fetchPage(10)] : [fetchPage(0)]);
