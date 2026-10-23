@@ -1950,33 +1950,37 @@ app.get('/auth/spotify/callback', async (req, res) => {
   }
 });
 
-app.get('/api/now-playing', async (req, res) => {
-  const venueId = req.query.venueId || 'default';
+// What the bar's Spotify is playing, shared by the bar dashboard, guest pages and the queue
+async function getNowPlaying(venueId) {
   const hit = nowPlayingCache.get(venueId);
-  if (hit && Date.now() - hit.at < NOW_PLAYING_CACHE_MS) return res.json(hit.body);
-  const json = res.json.bind(res);
-  res.json = body => { nowPlayingCache.set(venueId, { at: Date.now(), body }); return json(body); };
+  if (hit && Date.now() - hit.at < NOW_PLAYING_CACHE_MS) return hit.body;
+  let body = { playing: false };
   const token = await getVenueToken(venueId);
-  if (!token) return res.json({ playing: false });
-  try {
-    const r = await spotifyFetch('https://api.spotify.com/v1/me/player/currently-playing', {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    if (r.status === 204 || r.status === 404) return res.json({ playing: false });
-    const data = await r.json();
-    if (!data || !data.item) return res.json({ playing: false });
-    res.json({
-      playing: true,
-      uri: data.item.uri,
-      name: data.item.name,
-      artist: data.item.artists.map(a => a.name).join(', '),
-      image: data.item.album.images[1]?.url || data.item.album.images[0]?.url,
-      progress_ms: data.progress_ms,
-      duration_ms: data.item.duration_ms
-    });
-  } catch (e) {
-    res.json({ playing: false });
+  if (token) {
+    try {
+      const r = await spotifyFetch('https://api.spotify.com/v1/me/player/currently-playing', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (r.status !== 204 && r.status !== 404) {
+        const data = await r.json();
+        if (data && data.item) body = {
+          playing: true,
+          uri: data.item.uri,
+          name: data.item.name,
+          artist: data.item.artists.map(a => a.name).join(', '),
+          image: data.item.album.images[1]?.url || data.item.album.images[0]?.url,
+          progress_ms: data.progress_ms,
+          duration_ms: data.item.duration_ms
+        };
+      }
+    } catch (e) {}
   }
+  nowPlayingCache.set(venueId, { at: Date.now(), body });
+  return body;
+}
+
+app.get('/api/now-playing', async (req, res) => {
+  res.json(await getNowPlaying(req.query.venueId || 'default'));
 });
 
 app.post('/api/queue/auto-clear', async (req, res) => {
@@ -2405,13 +2409,26 @@ app.get('/api/queue', async (req, res) => {
       [venueId]
     );
     const played = await pool.query(
-      "SELECT * FROM songs WHERE venue_id = $1 AND status = 'played' ORDER BY played_at DESC LIMIT 5",
+      "SELECT * FROM songs WHERE venue_id = $1 AND status = 'played' ORDER BY played_at DESC LIMIT 6",
       [venueId]
     );
     const upcoming = await getUpcoming(venueId, queue.rows);
+    // A request is marked played the moment it starts. While it's still on, show it as playing
+    // now instead of under played, so guests and the bar see their song is on.
+    let nowPlaying = null;
+    const latest = played.rows[0];
+    if (latest && Date.now() - new Date(latest.played_at).getTime() < 15 * 60 * 1000) {
+      const np = await getNowPlaying(venueId).catch(() => null);
+      if (np && np.playing && isRequest(latest, { uris: [np.uri], name: np.name, artists: [{ name: (np.artist || '').split(', ')[0] }] })) {
+        nowPlaying = latest;
+        played.rows.shift();
+      }
+    }
+    const row = s => ({ id: s.id, name: s.name, artist: s.artist, image: s.image, uri: s.uri, venueId: s.venue_id });
     res.json({
-      queue: queue.rows.map(s => ({ id: s.id, name: s.name, artist: s.artist, image: s.image, uri: s.uri, venueId: s.venue_id, addedAt: s.added_at })),
-      played: played.rows.map(s => ({ id: s.id, name: s.name, artist: s.artist, image: s.image, uri: s.uri, venueId: s.venue_id, playedAt: s.played_at })),
+      queue: queue.rows.map(s => ({ ...row(s), addedAt: s.added_at })),
+      nowPlaying: nowPlaying && row(nowPlaying), // a Zoros request that's on right now
+      played: played.rows.slice(0, 5).map(s => ({ ...row(s), playedAt: s.played_at })),
       upcoming // null if Spotify couldn't be asked; the app then shows just the Zoros requests
     });
   } catch (e) {
