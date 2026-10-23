@@ -23,15 +23,21 @@ const app = express();
 
 // ── SPOTIFY RATE LIMITS ──
 // Every bar's Spotify calls count against the one Zoros Spotify app, so if Spotify says "too many
-// requests" (429) for any bar, every bar's search and queue stop working at once. When that happens,
-// all Spotify calls pause for as long as Spotify asks (Retry-After) instead of hammering it and
-// extending the block. Errors are logged with Spotify's own message and shown in /api/debug.
-const spotifyHealth = { blockedUntil: 0, lastOkAt: null, lastError: null };
+// requests" (429), calls to that endpoint pause instead of hammering it and extending the block.
+// The pause is per endpoint (artists, search, tracks, me...): on 23 Oct Spotify blocked only
+// /v1/artists for ~20h while search and queue still worked, and one paused artist-genre lookup
+// was stopping every bar's search and purchases. Errors are logged and shown in /api/debug.
+const spotifyHealth = { blockedUntil: {}, lastOkAt: null, lastError: null }; // blockedUntil: endpoint -> time
 const SPOTIFY_MAX_PAUSE_SECS = 30;
+// Genre lookups are optional (Last.fm still answers, songs aren't held up), so for these endpoints
+// Zoros waits as long as Spotify asks rather than asking again every 30s
+const SPOTIFY_OPTIONAL_ENDPOINTS = new Set(['artists']);
+const spotifyEndpoint = path => path.split('/')[2] || '';
 const spotifyLogged = new Map(); // "status path" -> last time it was logged, so errors don't flood the logs
 async function spotifyFetch(url, opts = {}) {
   const path = String(url).replace('https://api.spotify.com', '').split('?')[0];
-  const wait = spotifyHealth.blockedUntil - Date.now();
+  const endpoint = spotifyEndpoint(path);
+  const wait = (spotifyHealth.blockedUntil[endpoint] || 0) - Date.now();
   if (wait > 0) {
     return new Response(JSON.stringify({ error: { status: 429, message: 'Zoros is waiting out a Spotify rate limit' } }), {
       status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': String(Math.ceil(wait / 1000)) }
@@ -44,13 +50,14 @@ async function spotifyFetch(url, opts = {}) {
   try { body = (await r.clone().text()).slice(0, 300); } catch (e) {}
   const retryAfter = r.headers.get('retry-after');
   if (r.status === 429) {
-    // Never pause longer than SPOTIFY_MAX_PAUSE_SECS: on 23 Oct Spotify asked for ~23.6 hours and
-    // Zoros stopped searching and queuing for the rest of the night. If Spotify is still limiting
-    // after the pause, the next call gets another 429 and pauses again, costing one call every 30s.
+    // Search, tracks and the player never pause longer than SPOTIFY_MAX_PAUSE_SECS: on 23 Oct Spotify
+    // asked for ~23.6 hours and Zoros stopped searching and queuing for the rest of the night. If
+    // Spotify is still limiting after the pause, the next call gets another 429 and pauses again.
     const asked = parseInt(retryAfter, 10) || 30;
-    const secs = Math.min(Math.max(asked, 5), SPOTIFY_MAX_PAUSE_SECS);
-    spotifyHealth.blockedUntil = Date.now() + secs * 1000;
-    console.error(`[spotify] Rate limited (429) on ${path}; Spotify asked for ${asked}s, pausing all Spotify calls for ${secs}s`);
+    const maxSecs = SPOTIFY_OPTIONAL_ENDPOINTS.has(endpoint) ? 24 * 3600 : SPOTIFY_MAX_PAUSE_SECS;
+    const secs = Math.min(Math.max(asked, 5), maxSecs);
+    spotifyHealth.blockedUntil[endpoint] = Date.now() + secs * 1000;
+    console.error(`[spotify] Rate limited (429) on ${path}; Spotify asked for ${asked}s, pausing /v1/${endpoint} calls for ${secs}s`);
   } else {
     const key = `${r.status} ${path}`;
     if (Date.now() - (spotifyLogged.get(key) || 0) > 60000) {
@@ -2004,7 +2011,9 @@ app.get('/api/debug', async (req, res) => {
       connectedVenues: result.rows.map(r => r.venue_id),
       probe,
       spotify: {
-        pausedForRateLimitUntil: spotifyHealth.blockedUntil > Date.now() ? new Date(spotifyHealth.blockedUntil).toISOString() : null,
+        // endpoint -> when its rate-limit pause ends, only for endpoints paused right now
+        pausedForRateLimitUntil: Object.fromEntries(Object.entries(spotifyHealth.blockedUntil)
+          .filter(([, t]) => t > Date.now()).map(([e, t]) => [e, new Date(t).toISOString()])),
         lastOkAt: spotifyHealth.lastOkAt,
         lastError: spotifyHealth.lastError
       }
