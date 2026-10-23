@@ -817,7 +817,7 @@ app.get('/api/admin/patron', async (req, res) => {
   }
 });
 
-// Give a patron song credits by hand (e.g. a paid bundle that never reached their account).
+// Give any patron free song credits by hand, no purchase needed.
 // A negative number takes credits away, never below 0.
 app.post('/api/admin/add-credits', async (req, res) => {
   if (!isAdmin(req)) return res.status(403).json({ error: 'Unauthorized' });
