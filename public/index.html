@@ -194,6 +194,7 @@
   .queue-src.zoros { background: var(--orange); color: var(--white); }
   .queue-src.bar { background: transparent; color: var(--muted); border: 1px solid var(--border); }
   .queue-item.from-bar .queue-num { color: var(--muted); }
+  .queue-item.now-playing .queue-num { color: var(--orange); }
   .overlay { position: fixed; inset: 0; background: rgba(18,14,46,0.85); z-index: 199; display: none; backdrop-filter: blur(4px); }
   .overlay.show { display: block; }
 
@@ -473,6 +474,7 @@ const T = {
     srcBar: "Bar's queue",
     srcZoros: 'Request',
     queueBarNote: 'Includes songs the bar queued itself. Everything plays in this order.',
+    nowPlaying: 'Now playing',
     emptyQueue: 'Queue is empty.\nBe the first to request a song.',
     emptySearch: 'Search for any song and\nadd it to the bar\'s queue',
     searchPlaceholder: 'Search artist or song...',
@@ -530,6 +532,7 @@ const T = {
     srcBar: 'Cola del bar',
     srcZoros: 'Petición',
     queueBarNote: 'Incluye canciones que el bar puso en cola. Todo suena en este orden.',
+    nowPlaying: 'Sonando ahora',
     emptyQueue: 'La cola está vacía.\nSé el primero en pedir una canción.',
     emptySearch: 'Busca cualquier canción y\nañádela a la cola del bar',
     searchPlaceholder: 'Busca artista o canción...',
@@ -587,6 +590,7 @@ const T = {
     srcBar: 'Wachtrij bar',
     srcZoros: 'Verzoek',
     queueBarNote: 'Inclusief nummers die de bar zelf in de wachtrij zette. Alles speelt in deze volgorde.',
+    nowPlaying: 'Speelt nu',
     emptyQueue: 'De wachtrij is leeg.\nVraag als eerste een nummer aan.',
     emptySearch: 'Zoek een nummer en\nvoeg het toe aan de wachtrij van de zaak',
     searchPlaceholder: 'Zoek artiest of nummer...',
@@ -642,6 +646,7 @@ const T = {
     queueBtn: 'File',
     upNext: 'À Suivre',
     srcBar: "File du bar",
+    nowPlaying: 'En cours',
     srcZoros: 'Demande',
     queueBarNote: "Inclut les morceaux mis en file par le bar. Tout passe dans cet ordre.",
     emptyQueue: 'La file est vide.\nSois le premier à demander un morceau.',
@@ -1147,7 +1152,7 @@ async function loadQueue() {
   try {
     const r = await fetch(`/api/queue?venueId=${VENUE_ID}`);
     const data = await r.json();
-    renderQueue(data.upcoming && data.upcoming.length ? data.upcoming : (data.queue || []));
+    renderQueue(data.upcoming && data.upcoming.length ? data.upcoming : (data.queue || []), data.nowPlaying);
     updateBadge((data.queue || []).length);
   } catch(e) {}
 }
@@ -1157,15 +1162,31 @@ function esc(str) {
   return String(str == null ? '' : str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
-function renderQueue(queue) {
+// A Zoros request that's playing right now goes on top, so guests see their song is on
+function renderNowPlaying(s) {
+  if (!s) return '';
+  return `
+    <div class="queue-item now-playing">
+      <div class="queue-num">▶</div>
+      <img class="queue-img" src="${esc(s.image || '')}" onerror="this.style.background='#3D3284'" alt="">
+      <div class="queue-info">
+        <div class="name">${esc(s.name)}</div>
+        <div class="artist">${esc(s.artist)}</div>
+      </div>
+      <span class="queue-src zoros">${t('nowPlaying')}</span>
+    </div>`;
+}
+
+function renderQueue(queue, nowPlaying) {
   const el = document.getElementById('queueList');
+  if (!queue.length && nowPlaying) { el.innerHTML = renderNowPlaying(nowPlaying); return; }
   if (!queue.length) {
     el.innerHTML = `<div style="text-align:center;padding:32px 0;color:var(--muted);font-size:13px;font-weight:300">${t('emptyQueue').replace('\n','<br>')}</div>`;
     return;
   }
   // Label each song when the bar's own queued songs are mixed in, so guests see why theirs is further down
   const mixed = queue.some(s => s.source === 'bar');
-  el.innerHTML = (mixed ? `<p class="queue-note">${t('queueBarNote')}</p>` : '') + queue.map((s, i) => `
+  el.innerHTML = renderNowPlaying(nowPlaying) + (mixed ? `<p class="queue-note">${t('queueBarNote')}</p>` : '') + queue.map((s, i) => `
     <div class="queue-item${s.source === 'bar' ? ' from-bar' : ''}">
       <div class="queue-num">${i + 1}</div>
       <img class="queue-img" src="${esc(s.image || '')}" onerror="this.style.background='#3D3284'" alt="">

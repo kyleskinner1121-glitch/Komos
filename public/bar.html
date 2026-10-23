@@ -394,6 +394,8 @@
   .song-name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .song-artist { font-size: 12px; color: var(--text-muted); }
 
+  .song-row.now-playing .song-num { color: var(--orange, #ff5500); }
+  .np-tag { flex-shrink: 0; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: #ff5500; color: #fff; }
   .btn-remove {
     background: transparent;
     border: 1px solid var(--border);
@@ -1236,10 +1238,24 @@
     badge.textContent = `${data.queue.length} song${data.queue.length !== 1 ? 's' : ''}`;
 
     const queueEl = document.getElementById('queue-list');
-    if (data.queue.length === 0) {
+    // A Zoros request that's playing right now stays on top, marked as playing
+    const np = data.nowPlaying;
+    const npRow = np ? `
+        <div class="song-row now-playing">
+          <div class="song-num">▶</div>
+          ${np.image ? `<img class="song-art" src="${esc(np.image)}" alt="">` : `<div class="song-art-placeholder">🎵</div>`}
+          <div class="song-info">
+            <div class="song-name">${esc(np.name)}</div>
+            <div class="song-artist">${esc(np.artist)}</div>
+          </div>
+          <span class="np-tag">${currentLang === 'es' ? 'Sonando' : 'Playing'}</span>
+        </div>` : '';
+    if (data.queue.length === 0 && np) {
+      queueEl.innerHTML = npRow;
+    } else if (data.queue.length === 0) {
       queueEl.innerHTML = `<div class="empty-state"><div class="empty-icon">🎶</div>${currentLang === 'es' ? 'Cola vacía' : 'Queue is empty'}</div>`;
     } else {
-      queueEl.innerHTML = data.queue.map((s, i) => `
+      queueEl.innerHTML = npRow + data.queue.map((s, i) => `
         <div class="song-row">
           <div class="song-num">${i + 1}</div>
           ${s.image ? `<img class="song-art" src="${esc(s.image)}" alt="">` : `<div class="song-art-placeholder">🎵</div>`}
