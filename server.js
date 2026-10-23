@@ -294,6 +294,8 @@ async function initDB() {
     await pool.query(`UPDATE songs SET sent_at = added_at WHERE added_to_spotify AND sent_at IS NULL`);
     // How many times Spotify has refused a request, so one bad song can't hold up the rest
     await pool.query(`ALTER TABLE songs ADD COLUMN IF NOT EXISTS send_attempts INTEGER DEFAULT 0`);
+    // How many times a request vanished from Spotify without playing and was sent again
+    await pool.query(`ALTER TABLE songs ADD COLUMN IF NOT EXISTS resends INTEGER DEFAULT 0`);
     await pool.query(`ALTER TABLE processed_payments
       ADD COLUMN IF NOT EXISTS split_to VARCHAR(255),
       ADD COLUMN IF NOT EXISTS bar_amount INTEGER`);
@@ -1626,11 +1628,40 @@ async function retryPendingSpotify() {
 // ── SERVER-SIDE AUTO-CLEAR ──
 // Every 10 seconds, mark requests played once Spotify plays them. Only songs already sent to
 // Spotify can play, and Spotify plays its queue in the order songs were sent.
+// A request is only marked played when Spotify shows it playing or lists it in recently played.
+// A request that vanished from Spotify's queue without either (staff cleared the queue, or Spotify
+// accepted it but never really queued it) is sent to Spotify again instead of being marked played.
 const missingRounds = new Map(); // request id -> checks in a row it was gone from Spotify after being seen there
 const neverSeen = new Map();     // request id -> checks in a row it was missing without ever being seen there
+const unconfirmed = new Map();   // request id -> checks in a row it was missing and not in recently played
+const UNCONFIRMED_ROUNDS = 6;    // ~60s: recently played can lag behind, so wait before re-sending
+const MAX_RESENDS = 2;           // after this many re-sends, give up and flag it for a refund
+
+async function resendRequest(id, venueId) {
+  missingRounds.delete(id); neverSeen.delete(id); unconfirmed.delete(id);
+  const r = await pool.query(
+    `UPDATE songs SET resends = COALESCE(resends, 0) + 1,
+       added_to_spotify = CASE WHEN COALESCE(resends, 0) < $2 THEN FALSE ELSE added_to_spotify END,
+       sent_at = CASE WHEN COALESCE(resends, 0) < $2 THEN NULL ELSE sent_at END,
+       status = CASE WHEN COALESCE(resends, 0) < $2 THEN status ELSE 'unsent' END,
+       added_at = CASE WHEN COALESCE(resends, 0) < $2 AND added_at < NOW() - INTERVAL '2 hours' THEN NOW() - INTERVAL '2 hours' ELSE added_at END
+     WHERE id = $1 AND status = 'queued' RETURNING name, resends, status, amount_paid`,
+    [id, MAX_RESENDS]
+  );
+  const s = r.rows[0];
+  if (!s) return;
+  if (s.status === 'unsent') {
+    console.log(`[auto-clear] NEVER PLAYED, consider a refund: "${s.name}" at ${venueId} (song ${id}, ${s.amount_paid} cents) vanished from Spotify ${s.resends} times`);
+  } else {
+    console.log(`[auto-clear] "${s.name}" left Spotify's queue without playing at ${venueId}; sending it again (re-send ${s.resends})`);
+    sendPendingToSpotify(venueId);
+  }
+}
+
 async function autoClearPlayed() {
   if (missingRounds.size > 5000) missingRounds.clear(); // removed requests leave entries behind
   if (neverSeen.size > 5000) neverSeen.clear();
+  if (unconfirmed.size > 5000) unconfirmed.clear();
   // Last resort: a request handed to Spotify more than 4 hours ago has played or never will
   try {
     const stale = await pool.query(
@@ -1659,7 +1690,7 @@ async function autoClearPlayed() {
         const cleared = new Set();
         const clear = async (ids, why) => {
           ids = ids.filter(id => !cleared.has(id));
-          ids.forEach(id => { cleared.add(id); missingRounds.delete(id); });
+          ids.forEach(id => { cleared.add(id); missingRounds.delete(id); neverSeen.delete(id); unconfirmed.delete(id); });
           const names = await markPlayed(ids);
           if (names.length) console.log(`[auto-clear] ${why}: ${names.map(n => `"${n}"`).join(', ')} at ${venue_id}`);
         };
@@ -1675,6 +1706,9 @@ async function autoClearPlayed() {
           if (row) inSpotify.add(row.id);
         });
 
+        // Requests that look like they played but Spotify hasn't confirmed it yet
+        const unsure = new Set();
+
         // A song the bar removed is about to be skipped; don't count it as a play of another
         // request for the same song
         const skipping = now && (await pool.query(
@@ -1683,53 +1717,62 @@ async function autoClearPlayed() {
         // The oldest request for the playing song that isn't also still waiting is the copy playing
         const hit = now && !skipping ? queued.find(s => !inSpotify.has(s.id) && isRequest(s, now)) : null;
         if (hit) {
-          // Requests sent before it have played or been skipped already, unless they're still
-          // waiting in Spotify's queue (the bartender reordered it)
-          const earlier = waiting ? queued.slice(0, queued.indexOf(hit)).filter(s => !inSpotify.has(s.id)) : [];
-          await clear([hit.id, ...earlier.map(s => s.id)], 'Played');
+          await clear([hit.id], 'Played');
+          // Requests sent before it should have played already, unless they're still waiting in
+          // Spotify's queue (the bartender reordered it). Check them against recently played below.
+          if (waiting) queued.slice(0, queued.indexOf(hit)).filter(s => !inSpotify.has(s.id)).forEach(s => unsure.add(s.id));
         }
 
         // A request Spotify showed earlier that has now left both its queue and the player, two
-        // checks in a row, has played (e.g. the bartender skipped it between checks)
+        // checks in a row, may have played (e.g. the bartender skipped it between checks)
         if (waiting) {
-          const gone = [];
           for (const s of queued) {
             if (cleared.has(s.id)) continue;
-            if (inSpotify.has(s.id) || isRequest(s, now)) { missingRounds.set(s.id, 0); neverSeen.delete(s.id); continue; }
+            if (inSpotify.has(s.id) || isRequest(s, now)) {
+              missingRounds.set(s.id, 0); neverSeen.delete(s.id); unconfirmed.delete(s.id); unsure.delete(s.id); continue;
+            }
+            if (unconfirmed.has(s.id)) { unsure.add(s.id); continue; }
             if (!missingRounds.has(s.id)) {
               // Never seen in Spotify (e.g. it played as a copy we couldn't match). Only count it
               // missing while music is playing, Spotify's whole queue is visible (it shows ~20),
-              // and Spotify has had a minute to list it; then 3 checks in a row (30s) clears it.
+              // and Spotify has had a minute to list it; then 3 checks in a row (30s).
               const sentAgo = s.sent_at ? Date.now() - new Date(s.sent_at).getTime() : 0;
               if (!(now && now.isPlaying && waiting.length < 20 && sentAgo > 60000)) continue;
               const u = (neverSeen.get(s.id) || 0) + 1;
-              if (u >= 3) { neverSeen.delete(s.id); gone.push(s.id); } else neverSeen.set(s.id, u);
+              if (u >= 3) { neverSeen.delete(s.id); unsure.add(s.id); } else neverSeen.set(s.id, u);
               continue;
             }
             const n = missingRounds.get(s.id) + 1;
-            if (n >= 2) gone.push(s.id); else missingRounds.set(s.id, n);
+            if (n >= 2) unsure.add(s.id); else missingRounds.set(s.id, n);
           }
-          await clear(gone, 'Left Spotify');
         }
 
-        // Backup for songs that played between checks. Only counts a play that started after the
-        // request was sent, so a song that was already playing when someone requested it again
-        // doesn't clear the new request.
-        const recentRes = await spotifyFetch('https://api.spotify.com/v1/me/player/recently-played?limit=10', {
+        // Spotify's play history: the only proof that a request we didn't catch playing did play.
+        // Only counts a play that started after the request was sent, so a song that was already
+        // playing when someone requested it again doesn't clear the new request.
+        const recentRes = await spotifyFetch('https://api.spotify.com/v1/me/player/recently-played?limit=50', {
           headers: { Authorization: `Bearer ${token}` }
         });
-        if (recentRes.status === 200) {
-          const recentData = await recentRes.json();
-          const ids = [];
-          for (const item of (recentData && recentData.items) || []) {
-            if (!item || !item.track || !item.track.uri || !item.played_at) continue;
-            const track = { uris: [item.track.uri], name: item.track.name, artists: item.track.artists };
-            const started = new Date(item.played_at).getTime() - (item.track.duration_ms || 0);
-            const match = queued.find(s => !cleared.has(s.id) && !ids.includes(s.id) && !inSpotify.has(s.id) &&
-              isRequest(s, track) && s.sent_at && started > new Date(s.sent_at).getTime() - 10000);
-            if (match) ids.push(match.id);
-          }
-          await clear(ids, 'Recently played');
+        if (recentRes.status !== 200) continue; // can't confirm anything now; check again in 10s
+        const recentData = await recentRes.json();
+        const ids = [];
+        for (const item of (recentData && recentData.items) || []) {
+          if (!item || !item.track || !item.track.uri || !item.played_at) continue;
+          const track = { uris: [item.track.uri], name: item.track.name, artists: item.track.artists };
+          const started = new Date(item.played_at).getTime() - (item.track.duration_ms || 0);
+          const match = queued.find(s => !cleared.has(s.id) && !ids.includes(s.id) && !inSpotify.has(s.id) &&
+            isRequest(s, track) && s.sent_at && started > new Date(s.sent_at).getTime() - 10000);
+          if (match) ids.push(match.id);
+        }
+        await clear(ids, 'Recently played');
+
+        // Gone from Spotify but not in its play history: give history a minute to catch up,
+        // then send the request to Spotify again rather than pretend it played
+        for (const id of unsure) {
+          if (cleared.has(id)) continue;
+          const n = (unconfirmed.get(id) || 0) + 1;
+          if (n >= UNCONFIRMED_ROUNDS) await resendRequest(id, venue_id);
+          else unconfirmed.set(id, n);
         }
       } catch (e) {
         console.error(`[auto-clear] ${venue_id}:`, e.message);
