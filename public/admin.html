@@ -132,6 +132,12 @@
   .sheet-ok { color: var(--green); font-size: 13px; margin-top: 12px; }
   .sheet-bad { color: #ffc7ad; font-size: 13px; margin-top: 12px; }
   .modal .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+  .credit-form { display: flex; gap: 10px; flex-wrap: wrap; }
+  .credit-form input { padding: 9px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--bg); outline: none; }
+  .credit-form input:focus { border-color: var(--orange); }
+  .credit-form input[type=email] { flex: 1 1 240px; min-width: 0; }
+  .credit-form input[type=number] { width: 90px; }
+  #creditMsg.ok { color: var(--green); }
 
   @media (max-width: 1000px) { .kpis { grid-template-columns: repeat(3, 1fr); } }
   @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } .grid2 .card { margin-bottom: 0; } }
@@ -197,6 +203,17 @@
       </div>
       <div class="hint">For the selected period. "Buy rate" is purchases ÷ unique visitors. The bar's share is after Stripe fees.</div>
       <div class="tbl-wrap"><table id="barsTbl"></table></div>
+    </div>
+
+    <div class="card">
+      <h2>Patron credits</h2>
+      <div class="hint">Give a patron song credits by hand, e.g. a bundle they paid for that never reached their account. They need a Zoros account with this email. A negative number takes credits away.</div>
+      <form class="credit-form" onsubmit="addCredits(event)">
+        <input id="creditEmail" type="email" placeholder="Patron email" required>
+        <input id="creditAmount" type="number" step="1" min="-100" max="100" value="1" required aria-label="Credits to add">
+        <button type="submit" class="btn small" id="creditBtn">Add credits</button>
+      </form>
+      <div class="err" id="creditMsg"></div>
     </div>
 
     <div class="card">
@@ -594,6 +611,35 @@ async function linkStripe(venueId) {
     alert(err.message);
   }
 }
+// Look the patron up first so the confirm shows who it is and what they have now
+async function addCredits(e) {
+  e.preventDefault();
+  const msg = document.getElementById('creditMsg');
+  const btn = document.getElementById('creditBtn');
+  const email = document.getElementById('creditEmail').value.trim();
+  const credits = parseInt(document.getElementById('creditAmount').value, 10);
+  msg.className = 'err'; msg.textContent = '';
+  if (!credits) { msg.textContent = 'Enter a number of credits other than 0.'; return; }
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/admin/patron?email=' + encodeURIComponent(email), { headers: { 'x-admin-key': KEY } });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error || 'Something went wrong');
+    const p = d.patron;
+    const verb = credits > 0 ? `Add ${credits}` : `Take away ${-credits}`;
+    if (!confirm(`${verb} credit${Math.abs(credits) === 1 ? '' : 's'} for ${p.email}?\nThey have ${p.credits || 0} now.`)) return;
+    const done = await adminPost('/api/admin/add-credits', { email, credits });
+    msg.className = 'err ok';
+    msg.textContent = `Done. ${p.email} now has ${done.credits} credit${done.credits === 1 ? '' : 's'}.`;
+    document.getElementById('creditEmail').value = '';
+    document.getElementById('creditAmount').value = 1;
+  } catch (err) {
+    msg.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function syncUsers() {
   const btn = document.getElementById('syncUsersBtn');
   btn.disabled = true; btn.textContent = 'Syncing…';
