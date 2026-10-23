@@ -27,7 +27,7 @@ const app = express();
 // all Spotify calls pause for as long as Spotify asks (Retry-After) instead of hammering it and
 // extending the block. Errors are logged with Spotify's own message and shown in /api/debug.
 const spotifyHealth = { blockedUntil: 0, lastOkAt: null, lastError: null };
-const SPOTIFY_MAX_PAUSE_SECS = 60;
+const SPOTIFY_MAX_PAUSE_SECS = 30;
 const spotifyLogged = new Map(); // "status path" -> last time it was logged, so errors don't flood the logs
 async function spotifyFetch(url, opts = {}) {
   const path = String(url).replace('https://api.spotify.com', '').split('?')[0];
@@ -46,7 +46,7 @@ async function spotifyFetch(url, opts = {}) {
   if (r.status === 429) {
     // Never pause longer than SPOTIFY_MAX_PAUSE_SECS: on 23 Oct Spotify asked for ~23.6 hours and
     // Zoros stopped searching and queuing for the rest of the night. If Spotify is still limiting
-    // after the pause, the next call gets another 429 and pauses again, costing one call a minute.
+    // after the pause, the next call gets another 429 and pauses again, costing one call every 30s.
     const asked = parseInt(retryAfter, 10) || 30;
     const secs = Math.min(Math.max(asked, 5), SPOTIFY_MAX_PAUSE_SECS);
     spotifyHealth.blockedUntil = Date.now() + secs * 1000;
