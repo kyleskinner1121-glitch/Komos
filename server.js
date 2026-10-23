@@ -803,6 +803,44 @@ app.post('/api/admin/sync-users', async (req, res) => {
   }
 });
 
+// A patron's account by email, so the team can check credits before adding any
+app.get('/api/admin/patron', async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Unauthorized' });
+  const email = String(req.query.email || '').trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: 'Enter an email' });
+  try {
+    const r = await pool.query(`${USER_SHEET_SQL} WHERE u.email = $1`, [email]);
+    if (!r.rows.length) return res.status(404).json({ error: 'No patron account with that email' });
+    res.json({ success: true, patron: r.rows[0] });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Give any patron free song credits by hand, no purchase needed.
+// A negative number takes credits away, never below 0.
+app.post('/api/admin/add-credits', async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Unauthorized' });
+  const email = String((req.body && req.body.email) || '').trim().toLowerCase();
+  const credits = Number(req.body && req.body.credits);
+  if (!email) return res.status(400).json({ error: 'Enter an email' });
+  if (!Number.isInteger(credits) || credits === 0 || Math.abs(credits) > 100) {
+    return res.status(400).json({ error: 'Credits must be a whole number from -100 to 100, not 0' });
+  }
+  try {
+    const r = await pool.query(
+      'UPDATE users SET credits = GREATEST(COALESCE(credits, 0) + $1, 0) WHERE email = $2 RETURNING id, credits',
+      [credits, email]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'No patron account with that email' });
+    console.log(`[admin] ${credits > 0 ? 'Added' : 'Removed'} ${Math.abs(credits)} credit(s) for ${email}, now ${r.rows[0].credits}`);
+    res.json({ success: true, credits: r.rows[0].credits });
+    syncUserToSheet(r.rows[0].id);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Link (or unlink, with an empty ID) a bar's Stripe connected account for the automatic split.
 // Saved even if onboarding isn't finished; checkouts only split once Stripe says it's enabled.
 app.post('/api/admin/stripe-account', async (req, res) => {
