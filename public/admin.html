@@ -60,7 +60,7 @@
   .banner { background: rgba(255,85,0,0.1); border: 1px solid rgba(255,85,0,0.35); color: #ffc7ad; border-radius: 10px; padding: 10px 14px; font-size: 13px; margin-bottom: 18px; }
 
   /* KPIs */
-  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 14px; }
+  .kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 14px; }
   .kpi { background: var(--navy); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; min-width: 0; }
   .kpi .label { color: var(--muted); font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
   .kpi .value { font-family: 'Space Grotesk', sans-serif; font-size: 28px; font-weight: 700; margin-top: 6px; white-space: nowrap; }
@@ -294,6 +294,9 @@ document.getElementById('showRemoved').checked = store.get('zoros_admin_removed'
 const eur = c => '€' + ((c || 0) / 100).toLocaleString('en-IE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const int = n => (n || 0).toLocaleString('en-IE');
 const pct = (a, b) => b ? Math.round(a / b * 100) + '%' : '—';
+// Live time: "45 min" under an hour, then hours with one decimal ("12.5 h"); a dash when none
+const hrs = m => !m ? '—' : m < 60 ? m + ' min'
+  : (m / 60).toLocaleString('en-IE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' h';
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function ago(ts) {
   if (!ts) return '—';
@@ -383,7 +386,8 @@ function render() {
     { label: 'Zoros keeps', value: eur(t.zorosNet), sub: 'after bars and Stripe fees', neg: t.zorosNet < 0 },
     { label: 'Songs queued', value: int(t.songs), sub: t.payments ? eur(Math.round(t.revenue / t.payments)) + ' avg payment' : 'no payments yet' },
     { label: 'Visitors', value: int(t.visitors), sub: 'unique phones that opened the app' },
-    { label: 'Buy rate', value: pct(t.payments, t.visitors), sub: 'purchases ÷ visitors' }
+    { label: 'Buy rate', value: pct(t.payments, t.visitors), sub: 'purchases ÷ visitors' },
+    { label: 'Live hours', value: hrs(t.liveMinutes), sub: t.liveSince ? 'jukebox on + Spotify playing · since ' + day(t.liveSince) : 'tracking starts once a bar is playing' }
   ];
   document.getElementById('kpis').innerHTML = kpis.map(k => `
     <div class="kpi ${k.hero ? 'hero' : ''}">
@@ -486,12 +490,13 @@ function renderBars(bars) {
     return;
   }
   el.innerHTML = `<thead><tr>
-      <th>Bar</th><th>Status</th><th class="r">Visitors</th><th class="r">Songs</th><th class="r">Payments</th>
+      <th>Bar</th><th>Status</th><th class="r">Live hrs</th><th class="r">Visitors</th><th class="r">Songs</th><th class="r">Payments</th>
       <th class="r">Buy rate</th><th class="r">Revenue</th><th class="r">Bar's ${data.barSharePct}% after fees</th><th>Last song</th><th></th>
     </tr></thead><tbody>` + bars.map(b => `
     <tr>
       <td><div class="bar-name">${esc(b.name || b.venue_id.replace(/-/g, ' '))}</div><div class="bar-id">${esc(b.venue_id)}${b.name ? '' : ' · no account'}</div></td>
       <td>${b.removed ? '<span class="pill"><span class="dot"></span>Removed</span>' : `${b.is_active === null ? '' : `<span class="pill ${b.is_active ? 'ok' : 'bad'}"><span class="dot"></span>${b.is_active ? 'On' : 'Off'}</span>`}<span class="pill ${b.spotify_connected ? 'ok' : 'bad'}"><span class="dot"></span>Spotify</span>${stripePill(b)}`}</td>
+      <td class="r num">${hrs(b.live_minutes)}</td>
       <td class="r num">${int(b.visitors)}</td>
       <td class="r num">${int(b.songs)}</td>
       <td class="r num">${int(b.payments)}</td>

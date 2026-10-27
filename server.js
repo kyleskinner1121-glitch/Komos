@@ -326,6 +326,15 @@ async function initDB() {
         removed_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    // Live hours: one row for each minute a bar's jukebox was switched on and its Spotify was
+    // playing, i.e. the time guests could actually pay. Hours = rows / 60.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS live_minutes (
+        venue_id VARCHAR(255) NOT NULL,
+        minute TIMESTAMP NOT NULL,
+        PRIMARY KEY (venue_id, minute)
+      )
+    `);
     console.log('Database initialized');
   } catch (e) {
     console.error('DB init error:', e);
@@ -937,7 +946,8 @@ app.get('/api/admin/stats', async (req, res) => {
     const q = (sql, ps = params) => pool.query(sql, ps).then(r => r.rows);
     const [
       totals, payByVenue, songsByVenue, visitsByVenue, venues, owedRows,
-      nightly, bySrcVisits, bySrcPays, recentSongs, topSongs, apps, payouts, modeCounts, removedRows
+      nightly, bySrcVisits, bySrcPays, recentSongs, topSongs, apps, payouts, modeCounts, removedRows,
+      liveByVenue, liveSinceRows
     ] = await Promise.all([
       q(`SELECT COUNT(*)::int AS payments,
                 COALESCE(SUM(p.amount), 0)::int AS revenue,
@@ -989,7 +999,12 @@ app.get('/api/admin/stats', async (req, res) => {
       q(`SELECT COUNT(*) FILTER (WHERE livemode = true)::int AS live,
                 COUNT(*) FILTER (WHERE livemode IS NOT TRUE)::int AS test
          FROM processed_payments WHERE amount IS NOT NULL`, []),
-      q(`SELECT venue_id FROM removed_venues`, [])
+      q(`SELECT venue_id FROM removed_venues`, []),
+      // Live minutes per bar in the chosen range (jukebox on and Spotify playing)
+      q(`SELECT l.venue_id, COUNT(*)::int AS live_minutes
+         FROM live_minutes l WHERE ${inRange('l.minute')} AND ${aVenueOk('l.venue_id')} GROUP BY l.venue_id`, aParams),
+      // When live-hours tracking started, so earlier revenue isn't read as earned in these hours
+      q(`SELECT MIN(minute) AS since FROM live_minutes`, [])
     ]);
 
     const t = totals[0];
@@ -1000,7 +1015,7 @@ app.get('/api/admin/stats', async (req, res) => {
     const row = (id) => byId[id] || (byId[id] = {
       venue_id: id, name: null, is_active: null, spotify_connected: false,
       payments: 0, revenue: 0, fees: 0, songs: 0, last_song: null, visits: 0, visitors: 0,
-      bar_share: 0, live_share: 0, auto_paid: 0, paid_out: 0
+      bar_share: 0, live_share: 0, auto_paid: 0, paid_out: 0, live_minutes: 0
     });
     venues.forEach(v => {
       if (!includeDemo && TEST_VENUES.includes(v.venue_id)) return;
@@ -1009,6 +1024,7 @@ app.get('/api/admin/stats', async (req, res) => {
     payByVenue.forEach(r => { if (r.venue_id) Object.assign(row(r.venue_id), { payments: r.payments, revenue: r.revenue, fees: r.fees, bar_share: r.bar_share }); });
     songsByVenue.forEach(r => { if (r.venue_id) Object.assign(row(r.venue_id), { songs: r.songs, last_song: r.last_song }); });
     visitsByVenue.forEach(r => { if (r.venue_id) Object.assign(row(r.venue_id), { visits: r.visits, visitors: r.visitors }); });
+    liveByVenue.forEach(r => { if (r.venue_id) row(r.venue_id).live_minutes = r.live_minutes; });
     owedRows.forEach(r => {
       if (!r.venue_id || (!includeDemo && TEST_VENUES.includes(r.venue_id))) return;
       Object.assign(row(r.venue_id), { live_share: r.live_share, auto_paid: r.auto_paid, paid_out: r.paid_out });
@@ -1038,7 +1054,9 @@ app.get('/api/admin/stats', async (req, res) => {
         revenue: t.revenue, payments: t.payments, bundles: t.bundles, songs, visitors,
         barShare, fees: t.fees, feesEstimated: t.fees_estimated,
         zorosNet: t.revenue - barShare - t.fees,
-        owedNow: allBars.reduce((n, b) => n + b.owed, 0)
+        owedNow: allBars.reduce((n, b) => n + b.owed, 0),
+        liveMinutes: liveByVenue.reduce((n, r) => n + r.live_minutes, 0),
+        liveSince: liveSinceRows[0] ? liveSinceRows[0].since : null
       },
       paymentModes: modeCounts[0],
       bars,
@@ -1483,6 +1501,13 @@ async function addToSpotifyQueue(venueId, uri) {
   }
 }
 
+// The latest answer Spotify gave anywhere in the app about whether a bar is playing, so the
+// live-hours check can reuse it instead of asking Spotify again. Recording it changes nothing else.
+const playerSeen = new Map(); // venueId -> { at, playing }
+function notePlayer(venueId, playing) {
+  if (venueId) playerSeen.set(venueId, { at: Date.now(), playing });
+}
+
 // Is the bar's Spotify actually playing right now? Patrons can only pay while it is,
 // because Spotify refuses to queue songs when nothing is playing on the bar's device.
 async function spotifyIsPlaying(venueId) {
@@ -1492,8 +1517,10 @@ async function spotifyIsPlaying(venueId) {
     const r = await spotifyFetch('https://api.spotify.com/v1/me/player', {
       headers: { Authorization: `Bearer ${token}` }
     });
+    if (r.status === 204) notePlayer(venueId, false);
     if (r.status !== 200) return false; // 204 = no active device
     const data = await r.json();
+    notePlayer(venueId, !!(data && data.is_playing));
     return !!(data && data.is_playing);
   } catch (e) {
     return true; // network hiccup talking to Spotify — don't block the sale; the retry below catches it
@@ -1508,8 +1535,10 @@ async function playingNow(token, venueId) {
   const r = await spotifyFetch(`https://api.spotify.com/v1/me/player${market}`, {
     headers: { Authorization: `Bearer ${token}` }
   });
+  if (r.status === 204) notePlayer(venueId, false);
   if (r.status !== 200) return null; // 204 = no active device
   const data = await r.json();
+  notePlayer(venueId, !!(data && data.is_playing));
   const item = data && data.item;
   if (!item || !item.uri) return null;
   const uris = [item.uri];
@@ -1827,6 +1856,70 @@ setTimeout(() => {
   retryPendingSpotify();
   setInterval(retryPendingSpotify, 10000);
 }, 5000);
+
+// ── LIVE HOURS ──
+// Once a minute, every bar whose jukebox is switched on and whose Spotify is playing gets that
+// minute recorded. That's the time guests could pay (payments are refused while Spotify is paused
+// or the jukebox is off). A minute is stored once per bar, so a restart or an overlapping check
+// can't count it twice.
+// Kept light on Spotify, which every bar shares:
+// - If the app already heard from Spotify about the bar in the last 55 seconds (the queue checks
+//   do every 10s while songs are waiting), that answer is used and Spotify isn't asked again.
+// - A bar that was last seen not playing (closed, paused) is asked at most every 5 minutes.
+// - Spotify is never asked while the app is waiting out a rate limit, and a "too many requests"
+//   answer stops this round for every bar.
+// If Spotify can't be asked, that minute isn't counted, so live hours can come out slightly low
+// (at most ~5 minutes at the start of each session) but never high.
+const LIVE_FRESH_MS = 55 * 1000;
+const LIVE_IDLE_RECHECK_MS = 5 * 60 * 1000;
+const liveAskedAt = new Map(); // venueId -> when this check last asked Spotify itself
+let liveCheckRunning = false;
+async function recordLiveMinutes() {
+  if (liveCheckRunning) return;
+  liveCheckRunning = true;
+  try {
+    const r = await pool.query(
+      `SELECT t.venue_id FROM venue_tokens t
+       WHERE NOT EXISTS (SELECT 1 FROM removed_venues rv WHERE rv.venue_id = t.venue_id)`);
+    for (const { venue_id } of r.rows) {
+      try {
+        if (!(await venueIsActive(venue_id))) continue; // switched off: not live, no Spotify call
+        let seen = playerSeen.get(venue_id);
+        if (!seen || Date.now() - seen.at > LIVE_FRESH_MS) {
+          // Nothing recent from the rest of the app. A bar last seen idle waits 5 minutes between asks.
+          if (seen && !seen.playing && Date.now() - (liveAskedAt.get(venue_id) || 0) < LIVE_IDLE_RECHECK_MS) continue;
+          const token = await getVenueToken(venue_id);
+          if (!token) continue;
+          liveAskedAt.set(venue_id, Date.now());
+          const p = await spotifyFetch('https://api.spotify.com/v1/me/player', {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (p.status === 429) break; // rate limited (or already pausing): leave Spotify alone this round
+          if (p.status === 204) notePlayer(venue_id, false); // no active device
+          if (p.status !== 200) continue;
+          const player = await p.json();
+          notePlayer(venue_id, !!(player && player.is_playing));
+          seen = playerSeen.get(venue_id);
+        }
+        if (!seen.playing) continue;
+        await pool.query(
+          `INSERT INTO live_minutes (venue_id, minute) VALUES ($1, date_trunc('minute', NOW()))
+           ON CONFLICT DO NOTHING`, [venue_id]);
+      } catch (e) {
+        console.error(`[live-hours] ${venue_id}:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.error('[live-hours] Error:', e.message);
+  } finally {
+    liveCheckRunning = false;
+  }
+}
+
+setTimeout(() => {
+  recordLiveMinutes();
+  setInterval(recordLiveMinutes, 60000);
+}, 20000);
 
 // ── OUTREACH AGENT (SCHEDULED) ──
 // Runs every 6 hours rather than once a day on the dot — safe to do, because
