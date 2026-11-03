@@ -1556,8 +1556,12 @@ async function spotifyQueueTracks(token) {
 
 // Spotify sometimes plays a request as a different copy of the same song (another album or its
 // local version) under an ID we can't link back, so a request also matches on title + main artist.
+// Music-video copies of a song often carry tags like "| Official Video" or "Official Music Video"
+// with no brackets, so those are trimmed too.
+const VIDEO_TAG = /\s+(official\s+(music\s+)?video|music\s+video|video\s+oficial|videoclip(\s+oficial)?|official\s+visuali[sz]er|lyrics?\s+video|official\s+audio)$/;
 const plainTitle = s => String(s || '').toLowerCase()
-  .replace(/\s*[([].*?[)\]]/g, '').replace(/\s+-\s+.*$/, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  .replace(/\s*[([].*?[)\]]/g, '').replace(/\s+[-|–—]\s+.*$/, '').replace(/\s*\|.*$/, '')
+  .replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(VIDEO_TAG, '').trim();
 const plainArtist = s => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 function isRequest(row, track) {
   if (!track) return false;
@@ -2460,30 +2464,31 @@ async function getUpcoming(venueId, zorosRows) {
       if (i >= 0) spotifyQueue.splice(i, 1);
     });
 
-    // Zoros songs already handed to Spotify, matched by song (a song can be requested twice)
+    // Zoros songs already handed to Spotify. Matched by song, not just by Spotify ID: Spotify can
+    // queue a request as another copy of the same song (often its music-video version), which has
+    // its own ID. Matching by ID alone showed that copy as "bar queued" and listed the request a
+    // second time at the end. Each request matches one queued copy, oldest request first.
     const sent = zorosRows.filter(s => s.added_to_spotify);
-    const remaining = {};
-    sent.forEach(s => { remaining[s.uri] = (remaining[s.uri] || 0) + 1; });
-    let lastZoros = -1, left = sent.length;
-    for (let i = 0; i < spotifyQueue.length && left > 0; i++) {
-      if (remaining[spotifyQueue[i].uri] > 0) { remaining[spotifyQueue[i].uri]--; left--; lastZoros = i; }
-    }
-
-    const counts = {};
-    sent.forEach(s => { counts[s.uri] = (counts[s.uri] || 0) + 1; });
-    const list = spotifyQueue.slice(0, lastZoros + 1).map(t => {
-      const zoros = counts[t.uri] > 0;
-      if (zoros) counts[t.uri]--;
-      return {
-        name: t.name,
-        artist: (t.artists || []).map(a => a.name).join(', '),
-        image: (t.album && t.album.images && (t.album.images[2] || t.album.images[0]) || {}).url || '',
-        source: zoros ? 'zoros' : 'bar'
-      };
+    const used = new Set();
+    const matchOf = spotifyQueue.map(t => {
+      const m = sent.find(s => !used.has(s.id) && isRequest(s, { uris: [t.uri], name: t.name, artists: t.artists }));
+      if (m) used.add(m.id);
+      return m || null;
     });
+    let lastZoros = -1;
+    matchOf.forEach((m, i) => { if (m) lastZoros = i; });
+
+    const list = spotifyQueue.slice(0, lastZoros + 1).map((t, i) => matchOf[i]
+      // A request shows as the guest picked it (title and album cover), whichever copy Spotify queued
+      ? { name: matchOf[i].name, artist: matchOf[i].artist, image: matchOf[i].image, source: 'zoros' }
+      : {
+          name: t.name,
+          artist: (t.artists || []).map(a => a.name).join(', '),
+          image: (t.album && t.album.images && (t.album.images[2] || t.album.images[0]) || {}).url || '',
+          source: 'bar'
+        });
     // Requests Spotify hasn't got yet (music paused) or that didn't show in its list go last
-    zorosRows.filter(s => !s.added_to_spotify || counts[s.uri] > 0).forEach(s => {
-      if (s.added_to_spotify) counts[s.uri]--;
+    zorosRows.filter(s => !s.added_to_spotify || !used.has(s.id)).forEach(s => {
       list.push({ name: s.name, artist: s.artist, image: s.image, source: 'zoros' });
     });
     upcomingCache.set(venueId, { list, at: Date.now() });
